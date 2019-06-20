@@ -2649,6 +2649,41 @@ void GridFunction::Save(std::ostream &out) const
    out.flush();
 }
 
+#ifdef MFEM_USE_ADIOS2
+void GridFunction::Save(adios2stream &out,
+                        const std::string& variableName,
+                        const adios2stream::data_type type) const
+{
+   auto var = out.io.InquireVariable<double>(variableName);
+   if (!var)
+   {
+      if (type == adios2stream::data_type::point_data)
+      {
+         out.point_data.insert(variableName);
+      }
+      const size_t components = static_cast<size_t>(fes->GetVDim());
+      const size_t nodes = size /components;
+
+      if (components == 1 && type == adios2stream::data_type::point_data)
+      {
+         out.io.DefineVariable<double>(variableName, {}, {}, {nodes});
+      }
+      else
+      {
+         if (fes->GetOrdering() == Ordering::byNODES)
+         {
+            out.io.DefineVariable<double>(variableName, {}, {}, {components,nodes} );
+         }
+         else
+         {
+            out.io.DefineVariable<double>(variableName, {}, {}, {nodes, components} );
+         }
+      }
+   }
+   Vector::Print(out, variableName);
+}
+#endif
+
 void GridFunction::SaveVTK(std::ostream &out, const std::string &field_name,
                            int ref)
 {
