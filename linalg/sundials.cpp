@@ -454,6 +454,37 @@ namespace mfem
   // CVODES interface
   // ---------------------------------------------------------------------------
 
+  // Setup Newton problem M = (I-gamma J) is the linearized tangent of the rate equation
+  int CVODESSolver::LinSysSetupB(realtype t, N_Vector y, N_Vector yB, N_Vector fyB, SUNMatrix AB,
+				 booleantype jokB, booleantype *jcurB,
+				 realtype gammaB, void *user_data, N_Vector tmp1,
+				 N_Vector tmp2, N_Vector tmp3)
+  {
+    // Get data from N_Vectors
+    const Vector mfem_y(y);
+    const Vector mfem_yB(yB);
+    Vector mfem_fyB(fyB);
+    CVODESSolver *self = static_cast<CVODESSolver*>(GET_CONTENT(AB));
+    TimeDependentAdjointOperator * f = static_cast<TimeDependentAdjointOperator *>(self->f);
+    
+    // Compute the linear system
+    return(f->ImplicitSetupB(t, mfem_y, mfem_yB, mfem_fyB, jokB, jcurB, gammaB));
+  }
+
+  int CVODESSolver::LinSysSolveB(SUNLinearSolver LS, SUNMatrix AB, N_Vector yB,
+                               N_Vector Rb, realtype tol)
+  {
+    Vector mfem_yB(yB);
+    const Vector mfem_Rb(Rb);
+    CVODESSolver *self = static_cast<CVODESSolver*>(GET_CONTENT(LS));
+    TimeDependentAdjointOperator * f = static_cast<TimeDependentAdjointOperator *>(self->f);
+    // Solve the linear system
+    int ret = f->ImplicitSolveB(mfem_yB, mfem_Rb, tol);
+    return(ret);
+  }
+
+  
+  
   void CVODESSolver::CreateB(double &tB, Vector &xB)
   {
     // Fill N_Vector wrapper with initial condition data
@@ -571,6 +602,36 @@ namespace mfem
 
   }
 
+  void CVODESSolver::SetLinearSolverB()
+  {
+    // Free any existing linear solver
+    if (LSB != NULL) { SUNLinSolFree(LSB); LSB = NULL; }
+
+    // Wrap linear solver as SUNLinearSolver and SUNMatrix
+    LSB = SUNLinSolNewEmpty();
+    MFEM_VERIFY(sundials_mem, "error in SUNLinSolNewEmpty()");
+
+    LSB->content         = this;
+    LSB->ops->gettype    = LSGetType;
+    LSB->ops->solve      = CVODESSolver::LinSysSolveB; // JW change
+    LSB->ops->free       = LSFree;
+
+    AB = SUNMatNewEmpty();
+    MFEM_VERIFY(sundials_mem, "error in SUNMatNewEmpty()");
+
+    AB->content      = this;
+    AB->ops->getid   = MatGetID;
+    AB->ops->destroy = MatDestroy;
+
+    // Attach the linear solver and matrix
+    flag = CVodeSetLinearSolverB(sundials_mem, indexB, LSB, AB);
+    MFEM_VERIFY(flag == CV_SUCCESS, "error in CVodeSetLinearSolverB()");
+
+    // Set the linear system evaluation function
+    flag = CVodeSetLinSysFnB(sundials_mem, indexB, CVODESSolver::LinSysSetupB); // JW change
+    MFEM_VERIFY(flag == CV_SUCCESS, "error in CVodeSetLinSysFn()");
+  }
+
   // void CVODESSolver::SetLinearSolverB(SundialsLinearSolver &ls_spec)
   // {
   //   // Free any existing linear solver
@@ -658,15 +719,7 @@ namespace mfem
 
   void CVODESSolver::Step(Vector &x, double &t, double &dt)
   {
-    if (!Parallel()) {
-      NV_DATA_S(y) = x.GetData();
-      MFEM_VERIFY(NV_LENGTH_S(y) == x.Size(), "");
-    } else {
-#ifdef MFEM_USE_MPI
-      NV_DATA_P(y) = x.GetData();
-      MFEM_VERIFY(NV_LOCLENGTH_P(y) == x.Size(), "");
-#endif
-    }
+    VerifyN_Vector(y, x);
     
     // Integrate the system
     double tout = t + dt;
@@ -681,15 +734,8 @@ namespace mfem
 
   void CVODESSolver::StepB(Vector &xB, double &tB, double &dtB)
   {
-    if (!Parallel()) {
-      NV_DATA_S(yB) = xB.GetData();
-      MFEM_VERIFY(NV_LENGTH_S(yB) == xB.Size(), "");
-    } else {
-#ifdef MFEM_USE_MPI
-      NV_DATA_P(yB) = xB.GetData();
-      MFEM_VERIFY(NV_LOCLENGTH_P(yB) == xB.Size(), "");
-#endif
-    }
+
+    VerifyN_Vector(yB, xB);
     
     // Integrate the system
     double tout = tB - dtB;
