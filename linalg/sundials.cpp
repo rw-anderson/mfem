@@ -84,7 +84,7 @@ namespace mfem
   {
     return(GetObj(LS)->Setup());
   }
-
+  
   // Solve the linear system A x = b
   static int LSSolve(SUNLinearSolver LS, SUNMatrix A, N_Vector x, N_Vector b,
                      realtype tol)
@@ -118,7 +118,7 @@ namespace mfem
     // Compute the linear system
     return(GetObj(A)->ODELinSys(t, mfem_y, mfem_fy, jok, jcur, gamma));
   }
-
+  
   static int arkLinSysSetup(realtype t, N_Vector y, N_Vector fy, SUNMatrix A,
                             SUNMatrix M, booleantype jok, booleantype *jcur,
                             realtype gamma, void *user_data, N_Vector tmp1,
@@ -471,6 +471,21 @@ namespace mfem
     return(f->ImplicitSetupB(t, mfem_y, mfem_yB, mfem_fyB, jokB, jcurB, gammaB));
   }
 
+  static int cvLinSysSetupB(realtype t, N_Vector y, N_Vector yB, N_Vector fyB, SUNMatrix AB,
+				 booleantype jokB, booleantype *jcurB,
+				 realtype gammaB, void *user_data, N_Vector tmp1,
+				 N_Vector tmp2, N_Vector tmp3)
+  {
+    // Get data from N_Vectors
+    const Vector mfem_y(y);
+    const Vector mfem_yB(yB);
+    Vector mfem_fyB(fyB);
+
+    // Compute the linear system
+    return(GetObj(AB)->ODELinSysB(t, mfem_y, mfem_yB, mfem_fyB, jokB, jcurB, gammaB));
+  }
+
+  
   int CVODESSolver::LinSysSolveB(SUNLinearSolver LS, SUNMatrix AB, N_Vector yB,
                                N_Vector Rb, realtype tol)
   {
@@ -506,7 +521,37 @@ namespace mfem
     flag = CVodeSStolerancesB(sundials_mem, indexB, default_rel_tolB, default_abs_tolB);
     MFEM_VERIFY(flag == CV_SUCCESS, "error in CVodeSetSStolerancesB()");
 
+    // Set default linear solver (Newton is the default Nonlinear Solver)
+    LSB = SUNLinSol_SPGMR(yB, PREC_NONE, 0);
+    MFEM_VERIFY(LSB, "error in SUNLinSol_SPGMR()");
+    
+    /* Attach the matrix and linear solver */
+    flag = CVodeSetLinearSolverB(sundials_mem, indexB, LSB, NULL);
+    MFEM_VERIFY(flag == CV_SUCCESS, "error in CVodeSetLinearSolverB()");
+
   }
+
+  void CVODESSolver::SetSStolerancesB(double reltol, double abstol)
+  {
+    flag = CVodeSStolerancesB(sundials_mem, indexB, reltol, abstol);
+    MFEM_VERIFY(flag == CV_SUCCESS, "error in CVodeSetSStolerancesB()");
+  }
+
+    CVODESSolver::~CVODESSolver()
+  {
+    N_VDestroy(yB);
+    N_VDestroy(yy);
+    //    N_VDestroy(y);
+    
+    SUNMatDestroy(AB);
+    //    SUNMatDestroy(A);
+	
+        SUNLinSolFree(LSB);
+    //SUNLinSolFree(LSA);   
+    //    SUNNonlinSolFree(NLS);
+    //    CVodeFree(&sundials_mem);
+  }
+
   
   CVODESSolver::CVODESSolver(int lmm) :
     CVODESolver(lmm),
@@ -577,7 +622,7 @@ namespace mfem
 
     int loc_size = f_.Height();
     // Initiailize forward solver output
-    yy = N_VNew_Serial(NV_LENGTH_S(y));    
+    // yy = N_VNew_Serial(NV_LENGTH_S(y));    
 
     CreateB(tB, xB);
     
@@ -589,16 +634,8 @@ namespace mfem
     // MFEM_VERIFY(flag == CV_SUCCESS, "error in CVodeSetLinearSolverB()");
 
     /* Create dense SUNMatrix for use in linear solves */
-    AB = SUNDenseMatrix(loc_size, loc_size);
-    MFEM_VERIFY(AB, "error creating AB");
-    
-    /* Create dense SUNLinearSolver object */
-    LSB = SUNLinSol_Dense(yB, AB);
-    MFEM_VERIFY(LSB, "error in SUNLinSol_Dense()");
-    
-    /* Attach the matrix and linear solver */
-    flag = CVodeSetLinearSolverB(sundials_mem, indexB, LSB, AB);
-    MFEM_VERIFY(flag == CV_SUCCESS, "error in CVodeSetLinearSolverB()");
+    // AB = SUNDenseMatrix(loc_size, loc_size);
+    // MFEM_VERIFY(AB, "error creating AB");
 
   }
 
@@ -632,38 +669,38 @@ namespace mfem
     MFEM_VERIFY(flag == CV_SUCCESS, "error in CVodeSetLinSysFn()");
   }
 
-  // void CVODESSolver::SetLinearSolverB(SundialsLinearSolver &ls_spec)
-  // {
-  //   // Free any existing linear solver
-  //   if (LSB != NULL) { SUNLinSolFree(LSB); LSB = NULL; }
+  void CVODESSolver::SetLinearSolverB(SundialsLinearSolver &ls_spec)
+  {
+    // Free any existing linear solver
+    if (LSB != NULL) { SUNLinSolFree(LSB); LSB = NULL; }
 
-  //   // Wrap linear solver as SUNLinearSolver and SUNMatrix
-  //   LSB = SUNLinSolNewEmpty();
-  //   MFEM_VERIFY(sundials_mem, "error in SUNLinSolNewEmpty()");
+    // Wrap linear solver as SUNLinearSolver and SUNMatrix
+    LSB = SUNLinSolNewEmpty();
+    MFEM_VERIFY(sundials_mem, "error in SUNLinSolNewEmpty()");
 
-  //   LSB->content         = &ls_spec;
-  //   LSB->ops->gettype    = LSGetType;
-  //   LSB->ops->initialize = LSInit;
-  //   LSB->ops->setup      = LSSetup;
-  //   LSB->ops->solve      = LSSolve;
-  //   LSB->ops->free       = LSFree;
+    LSB->content         = &ls_spec;
+    LSB->ops->gettype    = LSGetType;
+    LSB->ops->initialize = LSInit;
+    LSB->ops->setup      = LSSetup;
+    LSB->ops->solve      = LSSolve;
+    LSB->ops->free       = LSFree;
 
-  //   AB = SUNMatNewEmpty();
-  //   MFEM_VERIFY(sundials_mem, "error in SUNMatNewEmpty()");
+    AB = SUNMatNewEmpty();
+    MFEM_VERIFY(sundials_mem, "error in SUNMatNewEmpty()");
 
-  //   AB->content      = &ls_spec;
-  //   AB->ops->getid   = MatGetID;
-  //   AB->ops->destroy = MatDestroy;
+    AB->content      = &ls_spec;
+    AB->ops->getid   = MatGetID;
+    AB->ops->destroy = MatDestroy;
 
-  //   // Attach the linear solver and matrix
-  //   flag = CVodeSetLinearSolverB(sundials_mem, indexB, LSB, AB);
-  //   MFEM_VERIFY(flag == CV_SUCCESS, "error in CVodeSetLinearSolver()");
+    // Attach the linear solver and matrix
+    flag = CVodeSetLinearSolverB(sundials_mem, indexB, LSB, AB);
+    MFEM_VERIFY(flag == CV_SUCCESS, "error in CVodeSetLinearSolver()");
 
-  //   // Todo: JW Requires rigging up ODELinSys and SundialsSetup in a SundialsSolver
-  //   // Set the linear system evaluation function
-  //   // flag = CVodeSetLinSysFnB(sundials_mem, indexB, cvLinSysSetupB);
-  //   // MFEM_VERIFY(flag == CV_SUCCESS, "error in CVodeSetLinSysFnB()");
-  // }
+    //Todo: JW Requires rigging up ODELinSys and SundialsSetup in a SundialsSolver
+    //Set the linear system evaluation function
+    flag = CVodeSetLinSysFnB(sundials_mem, indexB, cvLinSysSetupB);
+    MFEM_VERIFY(flag == CV_SUCCESS, "error in CVodeSetLinSysFnB()");
+  }
 
   
   int CVODESSolver::fQ(realtype t, const N_Vector y, N_Vector qdot, void *user_data)
@@ -756,10 +793,12 @@ namespace mfem
   {
     Vector mfem_yyy(yy);
 
+    FillN_Vector(yy, yyy);
+    
     flag = CVodeGetAdjY(sundials_mem, tB, yy);
     MFEM_VERIFY(flag >= 0, "error in CVodeGetAdjY()");
 
-    yyy = mfem_yyy;
+    //    yyy = mfem_yyy;
   }
   
   

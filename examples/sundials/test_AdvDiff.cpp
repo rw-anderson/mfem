@@ -24,11 +24,12 @@ Vector bb_min, bb_max;
 class AdvDiffSUNDIALS : public TimeDependentAdjointOperator
 {
 public:
-  AdvDiffSUNDIALS(int dim, Vector p, ParFiniteElementSpace *fes) :
-    TimeDependentAdjointOperator(dim),
+  AdvDiffSUNDIALS(int ydot_dim, int ybdot_dim, Vector p, ParFiniteElementSpace *fes) :
+    TimeDependentAdjointOperator(ydot_dim, ybdot_dim),
     p_(p),
     adjointMatrix(NULL),
-    M(NULL), K(NULL),
+    M(NULL), K(NULL), K_adj(NULL),
+    Mf(NULL), MK(NULL),
     m(NULL), k(NULL),
     pfes(fes),
     M_solver(fes->GetComm())
@@ -40,12 +41,16 @@ public:
     Array<int> essential_attr(pmesh->bdr_attributes.Size());
     essential_attr[0] = 1;
     essential_attr[1] = 1;
+
+    fes->GetEssentialTrueDofs(essential_attr, ess_tdof_list);
+
+    cout << "Essential tdofs: " << endl;
+    ess_tdof_list.Print();
     
     m = new ParBilinearForm(pfes);
     m->AddDomainIntegrator(new MassIntegrator());
     m->Assemble(skip_zeros);
-    m->Finalize(skip_zeros);
-    m->EliminateEssentialBC(essential_attr);
+    m->Finalize(skip_zeros);   
     
     k = new ParBilinearForm(pfes);    
     k->AddDomainIntegrator(new DiffusionIntegrator(*(new ConstantCoefficient(-p_[0]))));
@@ -54,16 +59,30 @@ public:
     k->AddDomainIntegrator(new ConvectionIntegrator(*(new VectorConstantCoefficient(p2))));
     k->Assemble(skip_zeros);
     k->Finalize(skip_zeros);
-    k->EliminateEssentialBC(essential_attr);
 
+    k1 = new ParBilinearForm(pfes);
+    k1->AddDomainIntegrator(new DiffusionIntegrator(*(new ConstantCoefficient(p_[0]))));
+    k1->AddDomainIntegrator(new ConvectionIntegrator(*(new VectorConstantCoefficient(p2))));
+    k1->Assemble(skip_zeros);
+    k1->Finalize(skip_zeros);
+
+    
     M = m->ParallelAssemble();
+    M->EliminateRowsCols(ess_tdof_list);
+    
     K = k->ParallelAssemble();
+    K->EliminateRowsCols(ess_tdof_list);
 
+    K_adj = k1->ParallelAssemble();
+    K_adj->EliminateRowsCols(ess_tdof_list);
+    
+    MK = ParMult(M, K);
+    
     M_prec.SetType(HypreSmoother::Jacobi);
     M_solver.SetPreconditioner(M_prec);
     M_solver.SetOperator(*M);
 
-    M_solver.SetRelTol(1e-9);
+    M_solver.SetRelTol(1e-14);
     M_solver.SetAbsTol(0.0);
     M_solver.SetMaxIter(1000);
     M_solver.SetPrintLevel(0);
@@ -77,17 +96,29 @@ public:
   virtual int ImplicitSetupB(const double t, const Vector &y, const Vector &yB,
 			     const Vector &fyB, int jokB, int *jcurB, double gammaB);
   virtual int ImplicitSolveB(Vector &x, const Vector &b, double tol);
+
+  virtual int ImplicitSetup(const double t, const Vector &y,
+			     const Vector &fy, int jok, int *jcur, double gamma);
+  virtual int ImplicitSolve(Vector &x, const Vector &b, double tol);
+
   
 protected:
   Vector p_;
-
+  Array<int> ess_tdof_list;
   ParFiniteElementSpace *pfes;
   
   // Internal matrices
   ParBilinearForm * m;
   ParBilinearForm * k;
+  ParBilinearForm * k1;
+  
   HypreParMatrix *M;
   HypreParMatrix *K;
+  HypreParMatrix *K_adj;
+
+  HypreParMatrix *Mf;
+  HypreParMatrix *MK;
+  HypreParMatrix *I;
 
   CGSolver M_solver;
   HypreSmoother M_prec;
@@ -95,6 +126,27 @@ protected:
   // Solvers
   GMRESSolver adjointSolver;  
   SparseMatrix* adjointMatrix;
+};
+
+class SundialsJacSolver : public SundialsLinearSolver
+{
+public:
+  SundialsJacSolver(TimeDependentOperator &oper_) : oper(&oper_) {}
+
+  virtual int ODELinSys(double t, Vector y, Vector fy, int jok, int *jcur,
+			 double gamma)
+  {
+    return oper->ImplicitSetup(t, y, fy, jok, jcur, gamma);
+  }
+
+  virtual int Solve(Vector &x, Vector b) {
+    double ignored = 0.0;
+    return oper->ImplicitSolve(x, b, ignored);
+  }
+  
+private:
+  TimeDependentOperator *oper;
+  
 };
 
 double u_init(const Vector &x) 
@@ -113,7 +165,7 @@ int main(int argc, char *argv[])
    // 1. Parse command-line options.
    int ser_ref_levels = 0;
    int par_ref_levels = 0;
-   int order = 3;
+   int order = 1;
    int ode_solver_type = 4;
    double t_final = 2.5;
    double dt = 0.01;
@@ -219,13 +271,16 @@ int main(int argc, char *argv[])
    ParGridFunction u(fes);
    FunctionCoefficient u0(u_init);
    u.ProjectCoefficient(u0);
-
+   
    cout << "Init u: " << endl;
    u.Print();
-   
-   AdvDiffSUNDIALS adv(u.Size(), p, fes);
 
+   // TimeDependentOperators need to be TrueDOF Size
+   HypreParVector *U = u.GetTrueDofs();
+
+   int adj_size = U->Size() + (myid == 0 ? p.Size() : 0);
    
+   AdvDiffSUNDIALS adv(U->Size(), adj_size, p, fes);
    
    double t = 0.0;
    adv.SetTime(t);
@@ -237,13 +292,23 @@ int main(int argc, char *argv[])
    ARKStepSolver *arkode = NULL;
 
    int steps = 200;
+
+   Array<int> ess_tdof_list;
+   
+   Array<int> essential_attr(pmesh->bdr_attributes.Size());
+   essential_attr[0] = 1;
+   essential_attr[1] = 1;
+
+   fes->GetEssentialTrueDofs(essential_attr, ess_tdof_list);
+
    
    switch (ode_solver_type)
      {
      case 4:
-       cvodes = new CVODESSolver(CV_ADAMS);
-       cvodes->Init(adv, t, u);
+       cvodes = new CVODESSolver(fes->GetComm(),CV_ADAMS);
+       cvodes->Init(adv, t, *U);
        cvodes->SetSStolerances(reltol, abstol);
+       //       cvodes->SetLinearSolver();
        //       cvodes->SetMaxStep(dt);
        //       cvodes->InitQuadIntegration(1.e-6,1.e-6);
        cvodes->InitAdjointSolve(steps);
@@ -256,9 +321,9 @@ int main(int argc, char *argv[])
    for (int ti = 0; !done; )
    {
       double dt_real = max(dt, t_final - t);
-      ode_solver->Step(u, t, dt_real);
+      ode_solver->Step(*U, t, dt_real);
       ti++;
-
+      
       done = (t >= t_final - 1e-8*dt);
 
       if (done || ti % vis_steps == 0)
@@ -270,65 +335,50 @@ int main(int argc, char *argv[])
 
       }
    }
-   
+
+   u = *U;
    cout << "Final Solution: " << t << endl;
    u.Print();
 
    // Calculate int_x u dx at t = 5
-   if (cvodes) {
-     ParLinearForm obj(fes);
-     ConstantCoefficient one(1.0);
-     obj.AddDomainIntegrator(new DomainLFIntegrator(one));
-     obj.Assemble();
+
+   ParLinearForm obj(fes);
+   ConstantCoefficient one(1.0);
+   obj.AddDomainIntegrator(new DomainLFIntegrator(one));
+   obj.Assemble();
      
-     double g = obj(u);
-     if (myid == 0)
-       {
-	 cout << "g: " << g << endl;
-       }
+   double g = obj(u);
+   if (myid == 0)
+     {
+       cout << "g: " << g << endl;
+     }
+
+   // backward portion of the problem
+   ParGridFunction v(fes);
+   v = 1.;
+   HypreParVector *V = v.GetTrueDofs();
+   V->SetSubVector(ess_tdof_list, 0.0);
+
+   // Add additional space for integrated parameter
+   Vector V_final(adj_size);
+   if (myid == 0 ) {
+     for (int i = 0 ; i < p.Size(); i++)
+       V_final[adj_size - p.Size() + i] = 0.;
    }
 
-   // // backward portion
-   // Vector w(3);
-   // w=0.;
-   // double TBout1 = 40.;
-   // Vector dG_dp(3);
-   // dG_dp=0.;
-   // if (cvodes) {
-   //   t = t_final;
-   //   cvodes->InitB(adv, t, w);
-   //   cvodes->InitQuadIntegrationB(1.e-6, 1.e-6);
-   //   // Commenting this line back in fails
-   //   cvodes->SetLinearSolverB();
-     
-   //   // Results at time TBout1
-   //   double dt_real = max(dt, t - TBout1);
-   //   cvodes->StepB(w, t, dt_real);
-   //   cvodes->GetCorrespondingForwardSolution(t, u);
-   //   cout << "t: " << t << endl;
-   //   cout << "w:" << endl;
-   //   w.Print();
-   //   cout << "u:" << endl;
-   //   u.Print();
+   t = t_final;
+   cvodes->InitB(adv, t, V_final);
+   cvodes->SetSStolerancesB(reltol, abstol);
 
-   //   // Results at T0
-   //   dt_real = max(dt, t - 0.);
-   //   cvodes->StepB(w, t, dt_real);
-   //   cvodes->GetCorrespondingForwardSolution(t, u);
-   //   cout << "t: " << t << endl;
-   //   cout << "w:" << endl;
-   //   w.Print();
-   //   cout << "u:" << endl;
-   //   u.Print();
-
-   //   // Evaluate Sensitivity
-   //   cvodes->EvalObjectiveSensitivity(t, dG_dp);
-   //   cout << "dG/dp:" << endl;
-   //   dG_dp.Print();
-     
-   // }
+   // Results at time TBout1
+   double dt_real = max(dt, t);
+   cvodes->StepB(V_final, t, dt_real);
+   cout << "t: " << t << endl;
+   cout << "v:" << endl;
+   V_final.Print();          
    
    // 10. Free the used memory.
+   delete U;
    delete ode_solver;
    
    return 0;
@@ -338,78 +388,116 @@ int main(int argc, char *argv[])
 void AdvDiffSUNDIALS::Mult(const Vector &x, Vector &y) const
 {
   Vector z(x.Size());
-  K->Mult(x, z);
+  Vector x1(x);
+
+  // Set boundary conditions to zero
+  x1.SetSubVector(ess_tdof_list, 0.0);
+  
+  K->Mult(x1, z);
+    
   M_solver.Mult(z, y);
 }
 
+int AdvDiffSUNDIALS::ImplicitSetup(const double t, const Vector &y,
+				    const Vector &fy, int jok, int *jcur, double gamma)
+{
+  // Mf = M(I - gamma J) = M - gamma * M * J
+  // J = df/dy => K
+  // fB
+  *jcur = 1;
+
+  delete Mf;
+  Mf = Add(1., *M, -gamma, *K);
+  Mf->EliminateRowsCols(ess_tdof_list);
+  cout << "t: " << pfes->GetMyRank() << " " << t << " " << gamma << endl;
+  return 0;
+}
+
+int AdvDiffSUNDIALS::ImplicitSolve(Vector &x, const Vector &b, double tol)
+{  
+  Vector z(b.Size());
+  M->Mult(b,z);
+
+  CGSolver solver(pfes->GetComm());
+  HypreSmoother prec;
+  prec.SetType(HypreSmoother::Jacobi);
+  solver.SetPreconditioner(prec);
+  solver.SetOperator(*Mf);
+  solver.SetRelTol(1E-14);
+  solver.SetMaxIter(1000);
+  
+  solver.Mult(z, x);
+  
+  return(0);
+}
 
 void AdvDiffSUNDIALS::QuadratureIntegration(const Vector &y, Vector &qdot) const
 {
-  qdot[0] = y[2];
+  mfem_error("Not implemented.");
 }
 
 
 void AdvDiffSUNDIALS::AdjointRateMult(const Vector &y, Vector & yB, Vector &yBdot) const
 {
-  double l21 = (yB[1]-yB[0]);
-  double l32 = (yB[2]-yB[1]);
-  double p1 = p_[0];
-  double p2 = p_[1];
-  double p3 = p_[2];
-  yBdot[0] = -p1 * l21;
-  yBdot[1] = p2 * y[2] * l21 - 2. * p3 * y[1] * l32;
-  yBdot[2] = p2 * y[1] * l21 - 1.0;
+
+  int x1_size = (pfes->GetMyRank() == 0) ? yB.Size() - 2 : yB.Size();
+  Vector z(x1_size);
+  
+  Vector x1(yB.GetData(), x1_size);
+
+  // Set boundary conditions to zero
+  x1.SetSubVector(ess_tdof_list, 0.0);
+  
+  K_adj->Mult(x1, z);
+
+  Vector yBdot1(yBdot.GetData(), x1_size);
+  M_solver.Mult(z, yBdot1);
+
+  // Now we have both the adjoint, yB, and y, at the same point in time
+  // We calculate
+  /*
+   * to u(x, t=0) and the gradient of g(5) with respect to p1, p2 is
+   *    (dg/dp)^T = [  int_t int_x (v * d^2u / dx^2) dx dt ]
+   *                [  int_t int_x (v * du / dx) dx dt     ]
+   */
+
+  ParBilinearForm dp1(pfes);
+  ConstantCoefficient mone(-1.);
+  dp1.AddDomainIntegrator(new DiffusionIntegrator(mone));
+  dp1.Assemble();
+  dp1.Finalize();
+  
+  HypreParMatrix * dP1 = dp1.ParallelAssemble();
+  dP1->EliminateRowsCols(ess_tdof_list);
+
+  Vector b(y);
+  dP1->Mult(y, b);
+  delete dP1;
+  
+  double dp1_result = InnerProduct(pfes->GetComm(), y, b);
+  
+  if (pfes->GetMyRank() == 0) {
+    yBdot[yB.Size() - 2] = dp1_result;
+    yBdot[yB.Size() - 1] = 0.;
+  }
+  
+  
 }
 
 void AdvDiffSUNDIALS::ObjectiveSensitivityMult(const Vector &y, const Vector &yB, Vector &qBdot) const
 {
-  double l21 = (yB[1]-yB[0]);
-  double l32 = (yB[2]-yB[1]);
-  double y23 = y[1] * y[2];
-
-  qBdot[0] = y[0] * l21;
-  qBdot[1] = -y23 * l21;
-  qBdot[2] = y[1]*y[1]*l32;
+  mfem_error("Not implemented.");
 }
 
 int AdvDiffSUNDIALS::ImplicitSetupB(const double t, const Vector &y, const Vector &yB,
 				    const Vector &fyB, int jokB, int *jcurB, double gammaB)
 {
-
-  // M = I- gamma J
-  // J = dfB/dyB
-  // fB
-  // Let's create a SparseMatrix and fill in the entries since this example doesn't contain finite elements
-  
-  delete adjointMatrix;
-  adjointMatrix = new SparseMatrix(y.Size(), yB.Size());
-  for (int j = 0; j < y.Size(); j++)
-    {
-      Vector JacBj(yB.Size());
-      Vector yBone(yB.Size());
-      yBone = 0.;
-      yBone[j] = 1.;
-      AdjointRateMult(y, yBone, JacBj);
-      JacBj[2] += 1.;
-      for (int i = 0; i < y.Size(); i++) {
-	adjointMatrix->Set(i,j, (i == j ? 1.0 : 0.) - gammaB * JacBj[i]);	
-      }
-    }
-
-  *jcurB = 1;
-  adjointMatrix->Finalize();
-  //  adjointMatrix->PrintMatlab();
-  //  y.Print();
-  adjointSolver.SetOperator(*adjointMatrix);
-  
-  return 0;
+  mfem_error("Not implemented.");
 }
 
 // Is b = -fB ?
 // is tol reltol or abstol?
 int AdvDiffSUNDIALS::ImplicitSolveB(Vector &x, const Vector &b, double tol)
 {
-  adjointSolver.SetRelTol(1e-14);
-  adjointSolver.Mult(b, x);
-  return(0);
+  mfem_error("Not implemented.");
 }

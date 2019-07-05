@@ -50,7 +50,7 @@ class RobertsSUNDIALS : public TimeDependentAdjointOperator
 {
 public:
   RobertsSUNDIALS(int dim, Vector p) :
-    TimeDependentAdjointOperator(dim),
+    TimeDependentAdjointOperator(dim, 3),
     p_(p),
     adjointMatrix(NULL)
   {}
@@ -63,14 +63,11 @@ public:
 			     const Vector &fyB, int jokB, int *jcurB, double gammaB);
   virtual int ImplicitSolveB(Vector &x, const Vector &b, double tol);
 
+
+  
   ~RobertsSUNDIALS() {
     delete adjointMatrix;
   }
-
-  class RobertsOperator : Operator
-  {
-    
-  };
   
 protected:
   Vector p_;
@@ -78,6 +75,27 @@ protected:
   // Solvers
   GMRESSolver adjointSolver;  
   SparseMatrix* adjointMatrix;
+};
+
+class SundialsJacSolverB : public SundialsLinearSolver
+{
+public:
+  SundialsJacSolverB(TimeDependentAdjointOperator &oper_) : oper(&oper_) {}
+
+  virtual int ODELinSysB(double t, Vector y, Vector yB, Vector fyB, int jokB, int *jcurB,
+			 double gammaB)
+  {
+    return oper->ImplicitSetupB(t, y, yB, fyB, jokB, jcurB, gammaB);
+  }
+
+  virtual int Solve(Vector &x, Vector b) {
+    double ignored = 0.0;
+    return oper->ImplicitSolveB(x, b, ignored);
+  }
+  
+private:
+  TimeDependentAdjointOperator *oper;
+  
 };
 
 
@@ -278,8 +296,11 @@ int main(int argc, char *argv[])
      t = t_final;
      cvodes->InitB(adv, t, w);
      cvodes->InitQuadIntegrationB(1.e-6, 1.e-6);
-     // Commenting this line back in fails
-     cvodes->SetLinearSolverB();
+
+     
+     //     cvodes->SetLinearSolverB();
+     SundialsJacSolverB jacB(adv);
+     cvodes->SetLinearSolverB(jacB);
      
      // Results at time TBout1
      double dt_real = max(dt, t - TBout1);

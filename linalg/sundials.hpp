@@ -117,7 +117,7 @@ namespace mfem
 
     /** Setup the linear solver (optional). */
     virtual int Setup() { return(0); };
-
+    
     /** Solve the linear system A x = b.
         @param[in/out]  x  On input, the initial guess. On output, the solution
         @param[in]      b  The linear system right-hand side */
@@ -325,12 +325,14 @@ namespace mfem
     /// Destroy the associated CVODE memory and SUNDIALS objects.
     virtual ~CVODESolver();
   };
-  
+
   class TimeDependentAdjointOperator : public TimeDependentOperator
   {
   public:
-    TimeDependentAdjointOperator(int dim, double t = 0., Type type = EXPLICIT) :
-      TimeDependentOperator(dim, t, type) {}
+    TimeDependentAdjointOperator(int dim, int adjdim, double t = 0., Type type = EXPLICIT) :
+      TimeDependentOperator(dim, t, type),
+      adjoint_height(adjdim)
+    {}
 
     virtual ~TimeDependentAdjointOperator(){};
 
@@ -338,7 +340,7 @@ namespace mfem
     virtual void AdjointRateMult(const Vector &y, Vector & yB, Vector &yBdot) const = 0;
     virtual void ObjectiveSensitivityMult(const Vector &y, const Vector &yB, Vector &qBdot) const = 0;
     virtual int ImplicitSetupB(const double t, const Vector &x, const Vector &xB, const Vector &fxB,
-			       int jokB, int *jcurB, double gammaB)
+    			       int jokB, int *jcurB, double gammaB)
     {
       mfem_error("TimeDependentOperator::ImplicitSetupB() is not overridden!");
       return(-1);
@@ -349,8 +351,11 @@ namespace mfem
       mfem_error("TimeDependentOperator::ImplicitSolveB() is not overridden!");
       return(-1);
     }
+
+    int GetAdjointHeight() {return adjoint_height;}
     
   protected:
+    int adjoint_height;
     
   };
   
@@ -460,6 +465,7 @@ namespace mfem
 
     void SetLinearSolverB();
 
+    void SetSStolerancesB(double reltol, double abstol);
     
     /// Setup the linear system A x = b
     static int LinSysSetupB(realtype t, N_Vector y, N_Vector yB, N_Vector fyB, SUNMatrix A,
@@ -473,7 +479,7 @@ namespace mfem
 
     
     /// Destroy the associated CVODE memory and SUNDIALS objects.
-    virtual ~CVODESSolver() {};
+    virtual ~CVODESSolver();
 
   private:
     void CreateB(double &t, Vector &x);
