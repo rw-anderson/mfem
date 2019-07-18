@@ -65,7 +65,6 @@ public:
     k1->AddDomainIntegrator(new ConvectionIntegrator(*(new VectorConstantCoefficient(p2))));
     k1->Assemble(skip_zeros);
     k1->Finalize(skip_zeros);
-
     
     M = m->ParallelAssemble();
     M->EliminateRowsCols(ess_tdof_list);
@@ -308,9 +307,6 @@ int main(int argc, char *argv[])
        cvodes = new CVODESSolver(fes->GetComm(),CV_ADAMS);
        cvodes->Init(adv, t, *U);
        cvodes->SetSStolerances(reltol, abstol);
-       //       cvodes->SetLinearSolver();
-       //       cvodes->SetMaxStep(dt);
-       //       cvodes->InitQuadIntegration(1.e-6,1.e-6);
        cvodes->InitAdjointSolve(steps);
        ode_solver = cvodes; break;
      }
@@ -328,9 +324,6 @@ int main(int argc, char *argv[])
 
       if (done || ti % vis_steps == 0)
       {
-   	//         cout << "time step: " << ti << ", time: " << t << endl;
-         if (cvode) { cvode->PrintInfo(); }
-         if (arkode) { arkode->PrintInfo(); }
    	 if (cvodes) { cvodes->PrintInfo(); }
 
       }
@@ -353,34 +346,43 @@ int main(int argc, char *argv[])
        cout << "g: " << g << endl;
      }
 
-   // backward portion of the problem
-   ParGridFunction v(fes);
-   v = 1.;
-   HypreParVector *V = v.GetTrueDofs();
-   V->SetSubVector(ess_tdof_list, 0.0);
+   if (cvodes) {
+   
+     // backward portion of the problem
+     ParGridFunction v(fes);
+     v = 1.;
+     v.SetSubVector(ess_tdof_list, 0.0);
+     HypreParVector *V = v.GetTrueDofs();
+   
+     // Add additional space for integrated parameter
+     Vector V_final(adj_size);
+     for (int i = 0; i < v.Size(); i++)
+       V_final[i] = v[i];
+   
+     if (myid == 0 ) {
+       for (int i = 0 ; i < p.Size(); i++)
+	 V_final[adj_size - p.Size() + i] = 0.;     
+     }
 
-   // Add additional space for integrated parameter
-   Vector V_final(adj_size);
-   if (myid == 0 ) {
-     for (int i = 0 ; i < p.Size(); i++)
-       V_final[adj_size - p.Size() + i] = 0.;
+     V_final.Print();
+   
+     t = t_final;
+     cvodes->InitB(adv, t, V_final);
+     cvodes->SetSStolerancesB(reltol, abstol);
+
+     // Results at time TBout1
+     double dt_real = max(dt, t);
+     cvodes->StepB(V_final, t, dt_real);
+     cout << "t: " << t << endl;
+     cout << "v:" << endl;
+     V_final.Print();          
+
    }
-
-   t = t_final;
-   cvodes->InitB(adv, t, V_final);
-   cvodes->SetSStolerancesB(reltol, abstol);
-
-   // Results at time TBout1
-   double dt_real = max(dt, t);
-   cvodes->StepB(V_final, t, dt_real);
-   cout << "t: " << t << endl;
-   cout << "v:" << endl;
-   V_final.Print();          
    
    // 10. Free the used memory.
    delete U;
-   delete ode_solver;
-   
+
+   MPI_Finalize();
    return 0;
 }
 
@@ -446,9 +448,10 @@ void AdvDiffSUNDIALS::AdjointRateMult(const Vector &y, Vector & yB, Vector &yBdo
   Vector x1(yB.GetData(), x1_size);
 
   // Set boundary conditions to zero
-  x1.SetSubVector(ess_tdof_list, 0.0);
+  Vector yB1(x1);
+  yB1.SetSubVector(ess_tdof_list, 0.0);
   
-  K_adj->Mult(x1, z);
+  K_adj->Mult(yB1, z);
 
   Vector yBdot1(yBdot.GetData(), x1_size);
   M_solver.Mult(z, yBdot1);
@@ -470,15 +473,29 @@ void AdvDiffSUNDIALS::AdjointRateMult(const Vector &y, Vector & yB, Vector &yBdo
   HypreParMatrix * dP1 = dp1.ParallelAssemble();
   dP1->EliminateRowsCols(ess_tdof_list);
 
-  Vector b(y);
-  dP1->Mult(y, b);
+  Vector b1(y.Size());
+  dP1->Mult(y, b1);
   delete dP1;
+
+  ParBilinearForm dp2(pfes);
+  Vector p2(pfes->GetParMesh()->SpaceDimension()); p2 = 1.;
+  dp2.AddDomainIntegrator(new ConvectionIntegrator(*(new VectorConstantCoefficient(p2))));
+  dp2.Assemble();
+  dp2.Finalize();
+
+  HypreParMatrix * dP2 = dp2.ParallelAssemble();
+  dP2->EliminateRowsCols(ess_tdof_list);
+
+  Vector b2(y.Size());
+  dP2->Mult(y, b2);
+  delete dP2;
   
-  double dp1_result = InnerProduct(pfes->GetComm(), y, b);
-  
+  double dp1_result = InnerProduct(pfes->GetComm(), yB1, b1);
+  double dp2_result = InnerProduct(pfes->GetComm(), yB1, b2);
+
   if (pfes->GetMyRank() == 0) {
-    yBdot[yB.Size() - 2] = dp1_result;
-    yBdot[yB.Size() - 1] = 0.;
+    yBdot[x1_size] = dp1_result;
+    yBdot[x1_size + 1] = dp2_result;
   }
   
   

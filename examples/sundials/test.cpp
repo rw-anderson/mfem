@@ -132,7 +132,8 @@ int main(int argc, char *argv[])
    args.AddOption(&ode_solver_type, "-s", "--ode-solver",
                   "ODE solver: 1 - CVODE (adaptive order) implicit Adams,\n\t"
                   "            2 - ARKODE default (4th order) explicit,\n\t"
-                  "            3 - ARKODE RK8.");
+                  "            3 - ARKODE, \n\t"
+		  "            4 - CVODES for adjoint sensitivities");
    args.AddOption(&t_final, "-tf", "--t-final",
                   "Final time; start time is 0.");
    args.AddOption(&dt, "-dt", "--time-step",
@@ -184,11 +185,6 @@ int main(int argc, char *argv[])
 
    // 7. Define the time-dependent evolution operator describing the ODE
    //    right-hand side, and define the ODE solver used for time integration.
-   /*
-     data->p[0] = RCONST(0.04);
-     data->p[1] = RCONST(1.0e4);
-     data->p[2] = RCONST(3.0e7);
-    */
    
    Vector p(3);
    p[0] = 0.04;
@@ -222,7 +218,6 @@ int main(int argc, char *argv[])
 	 cvode = new CVODESolver(CV_BDF);
 	 cvode->Init(adv, t, u);
 	 cvode->SetSVtolerances(reltol, abstol_v);
-	 //         cvode->SetSStolerances(reltol, abstol);
 	 cvode->SetMaxStep(dt);
 	 ode_solver = cvode;
        break;
@@ -249,7 +244,6 @@ int main(int argc, char *argv[])
 			       }
 			       );
        cvodes->SetSVtolerances(reltol, abstol_v);
-       //       cvodes->SetMaxStep(dt);
        cvodes->InitQuadIntegration(1.e-6,1.e-6);
        cvodes->InitAdjointSolve(150);
        ode_solver = cvodes; break;
@@ -296,9 +290,7 @@ int main(int argc, char *argv[])
      t = t_final;
      cvodes->InitB(adv, t, w);
      cvodes->InitQuadIntegrationB(1.e-6, 1.e-6);
-
      
-     //     cvodes->SetLinearSolverB();
      SundialsJacSolverB jacB(adv);
      cvodes->SetLinearSolverB(jacB);
      
