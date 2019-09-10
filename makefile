@@ -244,6 +244,14 @@ ifeq ($(MFEM_USE_HIP),YES)
    endif
 endif
 
+# JIT configuration
+ifeq ($(MFEM_USE_JIT),YES)
+   MFEM_EXT_LIBS += -ldl
+   ifneq ($(MFEM_SHARED),YES)
+      $(error Incompatible config: MFEM_USE_JIT requires MFEM_SHARED)
+   endif
+endif
+
 DEP_CXX ?= $(MFEM_CXX)
 
 # Check legacy OpenMP configuration
@@ -320,7 +328,7 @@ MFEM_DEFINES = MFEM_VERSION MFEM_VERSION_STRING MFEM_GIT_STRING MFEM_USE_MPI\
  MFEM_USE_SUPERLU MFEM_USE_STRUMPACK MFEM_USE_GNUTLS MFEM_USE_NETCDF\
  MFEM_USE_PETSC MFEM_USE_MPFR MFEM_USE_SIDRE MFEM_USE_CONDUIT MFEM_USE_PUMI\
  MFEM_USE_CUDA MFEM_USE_HIP MFEM_USE_OCCA MFEM_USE_RAJA\
- MFEM_SOURCE_DIR MFEM_INSTALL_DIR
+ MFEM_SOURCE_DIR MFEM_INSTALL_DIR MFEM_USE_JIT
 
 # List of makefile variables that will be written to config.mk:
 MFEM_CONFIG_VARS = MFEM_CXX MFEM_CPPFLAGS MFEM_CXXFLAGS MFEM_INC_DIR\
@@ -388,7 +396,8 @@ endif
 
 # Source dirs in logical order
 DIRS = general linalg mesh fem
-SOURCE_FILES = $(foreach dir,$(DIRS),$(wildcard $(SRC)$(dir)/*.cpp))
+SOURCE_FILES = $(foreach dir,$(DIRS),\
+  $(filter-out $(SRC)$(dir)/mpp.cpp, $(wildcard $(SRC)$(dir)/*.cpp)))
 RELSRC_FILES = $(patsubst $(SRC)%,%,$(SOURCE_FILES))
 OBJECT_FILES = $(patsubst $(SRC)%,$(BLD)%,$(SOURCE_FILES:.cpp=.o))
 OKL_DIRS = fem
@@ -412,8 +421,22 @@ MFEM_BUILD_FLAGS = $(MFEM_PICFLAG) $(MFEM_CPPFLAGS) $(MFEM_CXXFLAGS)\
  $(MFEM_TPLFLAGS) $(CONFIG_FILE_DEF)
 
 # Rules for compiling all source files.
+# nvcc needs the MFEM_SOURCE_DIR ('-I.') to compile from stdin
+ifeq ($(MFEM_USE_JIT),YES)
+MPP_LANG = $(if $(MFEM_USE_CUDA:YES=),-x c++)
+$(OBJECT_FILES): $(BLD)%.o: $(SRC)%.cpp $(CONFIG_MK) mpp
+	./mpp $(<) | $(MFEM_CXX) $(MPP_LANG) $(strip $(MFEM_BUILD_FLAGS)) -I. -I$(patsubst %/,%,$(<D)) -c -o $(@) -
+else
 $(OBJECT_FILES): $(BLD)%.o: $(SRC)%.cpp $(CONFIG_MK)
 	$(MFEM_CXX) $(MFEM_BUILD_FLAGS) -c $(<) -o $(@)
+endif
+
+# Rule for compiling kernel source file generator.
+MPP_MFEM_CONFIG  = -DMFEM_CXX="$(MFEM_CXX)"
+MPP_MFEM_CONFIG += -DMFEM_INSTALL_DIR="$(MFEM_INSTALL_DIR)"
+MPP_MFEM_CONFIG += -DMFEM_BUILD_FLAGS="$(strip $(MFEM_BUILD_FLAGS))"
+mpp: $(BLD)general/mpp.cpp $(BLD)general/jit.hpp $(THIS_MK)
+	$(MFEM_CXX) -O3 -std=c++11 -o $(BLD)$(@) $(<) $(MPP_MFEM_CONFIG)
 
 all: examples miniapps $(TEST_DIRS)
 
@@ -430,6 +453,7 @@ doc:
 -include $(BLD)deps.mk
 
 $(BLD)libmfem.a: $(OBJECT_FILES)
+	[ ! -e $(@) ] || rm -f $(@)
 	$(AR) $(ARFLAGS) $(@) $(OBJECT_FILES)
 	$(RANLIB) $(@)
 	@$(MAKE) deprecation-warnings
@@ -515,12 +539,12 @@ $(ALL_CLEAN_SUBDIRS):
 	$(MAKE) -C $(BLD)$(@D) $(@F)
 
 clean: $(addsuffix /clean,$(EM_DIRS) $(TEST_DIRS))
-	rm -f $(addprefix $(BLD),*/*.o */*~ *~ libmfem.* deps.mk)
+	rm -f $(addprefix $(BLD),*/*.o */*~ *~ libmfem.* deps.mk mpp)
 
 distclean: clean config/clean doc/clean
 	rm -rf mfem/
 
-INSTALL_SHARED_LIB = $(MFEM_CXX) $(MFEM_BUILD_FLAGS) $(INSTALL_SOFLAGS)\
+INSTALL_SHARED_LIB = $(MFEM_CXX) $(MFEM_LINK_FLAGS) $(INSTALL_SOFLAGS)\
    $(OBJECT_FILES) $(EXT_LIBS) -o $(PREFIX_LIB)/libmfem.$(SO_VER) && \
    cd $(PREFIX_LIB) && ln -sf libmfem.$(SO_VER) libmfem.$(SO_EXT)
 
@@ -629,6 +653,7 @@ status info:
 	$(info MFEM_USE_HIP           = $(MFEM_USE_HIP))
 	$(info MFEM_USE_RAJA          = $(MFEM_USE_RAJA))
 	$(info MFEM_USE_OCCA          = $(MFEM_USE_OCCA))
+	$(info MFEM_USE_JIT           = $(MFEM_USE_JIT))
 	$(info MFEM_CXX               = $(value MFEM_CXX))
 	$(info MFEM_CPPFLAGS          = $(value MFEM_CPPFLAGS))
 	$(info MFEM_CXXFLAGS          = $(value MFEM_CXXFLAGS))
