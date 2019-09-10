@@ -159,6 +159,7 @@ void VectorDivergenceIntegrator::Setup(const FiniteElementSpace &trial_fes,
 }
 
 // PA VectorDivergence Apply 2D kernel
+MFEM_KERNEL
 template<const int T_TR_D1D = 0, const int T_TE_D1D = 0, const int T_Q1D = 0>
 static void PAVectorDivergenceApply2D(const int NE,
                                       const Array<double> &b,
@@ -279,8 +280,9 @@ static void PAVectorDivergenceApply2D(const int NE,
 }
 
 // Shared memory PA VectorDivergence Apply 2D kernel
-template<const int T_TR_D1D = 0, const int T_TE_D1D = 0, const int T_Q1D = 0,
-         const int T_NBZ = 0>
+MFEM_KERNEL
+template<const int T_TR_D1D = 0, const int T_TE_D1D = 0,
+         const int T_Q1D = 0, const int T_NBZ = 0>
 static void SmemPAVectorDivergenceApply2D(const int NE,
                                           const Array<double> &_b,
                                           const Array<double> &_g,
@@ -290,13 +292,15 @@ static void SmemPAVectorDivergenceApply2D(const int NE,
                                           Vector &_y,
                                           const int tr_d1d = 0,
                                           const int te_d1d = 0,
-                                          const int q1d = 0)
+                                          const int q1d = 0,
+                                          const int nbz =0)
 {
    // TODO
    MFEM_ASSERT(false, "SHARED MEM NOT PROGRAMMED YET");
 }
 
 // PA VectorDivergence Apply 2D kernel transpose
+MFEM_KERNEL
 template<const int T_TR_D1D = 0, const int T_TE_D1D = 0, const int T_Q1D = 0>
 static void PAVectorDivergenceApplyTranspose2D(const int NE,
                                                const Array<double> &bt,
@@ -413,6 +417,7 @@ static void PAVectorDivergenceApplyTranspose2D(const int NE,
 }
 
 // PA Vector Divergence Apply 3D kernel
+MFEM_KERNEL
 template<const int T_TR_D1D = 0, const int T_TE_D1D = 0, const int T_Q1D = 0>
 static void PAVectorDivergenceApply3D(const int NE,
                                       const Array<double> &b,
@@ -596,6 +601,7 @@ static void PAVectorDivergenceApply3D(const int NE,
 }
 
 // PA Vector Divergence Apply 3D kernel
+MFEM_KERNEL
 template<const int T_TR_D1D = 0, const int T_TE_D1D = 0, const int T_Q1D = 0>
 static void PAVectorDivergenceApplyTranspose3D(const int NE,
                                                const Array<double> &bt,
@@ -774,7 +780,10 @@ static void PAVectorDivergenceApplyTranspose3D(const int NE,
 }
 
 // Shared memory PA Vector Divergence Apply 3D kernel
-template<const int T_TR_D1D = 0, const int T_TE_D1D = 0, const int T_Q1D = 0>
+MFEM_KERNEL
+template<const int T_TR_D1D = 0,
+         const int T_TE_D1D = 0,
+         const int T_Q1D = 0>
 static void SmemPAVectorDivergenceApply3D(const int NE,
                                           const Array<double> &_b,
                                           const Array<double> &_g,
@@ -803,9 +812,7 @@ static void PAVectorDivergenceApply(const int dim,
                                     Vector &y,
                                     bool transpose=false)
 {
-
-   //if (Device::Allows(Backend::RAJA_CUDA))
-   //{
+#ifndef MFEM_USE_JIT
    if (dim == 2)
    {
       switch ((TR_D1D << 4) | TE_D1D)
@@ -1043,6 +1050,30 @@ static void PAVectorDivergenceApply(const int dim,
       default:   return PAVectorDivergenceApply3D(NE,B,G,Bt,op,x,y,D1D,Q1D);
    }
    }*/
+#else // MFEM_USE_JIT
+   if (dim == 2)
+   {
+      if (transpose)
+      {
+         return PAVectorDivergenceApplyTranspose2D(NE,B,G,Bt,op,x,y,TR_D1D,TE_D1D,Q1D);
+      }
+      else
+      {
+         return PAVectorDivergenceApply2D(NE,B,G,Bt,op,x,y,TR_D1D,TE_D1D,Q1D);
+      }
+   }
+   if (dim == 3)
+   {
+      if (transpose)
+      {
+         return PAVectorDivergenceApplyTranspose3D(NE,B,G,Bt,op,x,y,TR_D1D,TE_D1D,Q1D);
+      }
+      else
+      {
+         return PAVectorDivergenceApply3D(NE,B,G,Bt,op,x,y,TR_D1D,TE_D1D,Q1D);
+      }
+   }
+#endif // MFEM_USE_JIT
    MFEM_ABORT("Unknown kernel.");
 }
 

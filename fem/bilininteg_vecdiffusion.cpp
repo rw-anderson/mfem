@@ -149,6 +149,7 @@ void VectorDiffusionIntegrator::Setup(const FiniteElementSpace &fes)
 }
 
 // PA Diffusion Apply 2D kernel
+MFEM_KERNEL
 template<int T_D1D = 0, int T_Q1D = 0> static
 void PAVectorDiffusionApply2D(const int NE,
                               const Array<double> &b,
@@ -273,6 +274,7 @@ void PAVectorDiffusionApply2D(const int NE,
 }
 
 // PA Diffusion Apply 3D kernel
+MFEM_KERNEL
 template<const int T_D1D = 0,
          const int T_Q1D = 0> static
 void PAVectorDiffusionApply3D(const int NE,
@@ -283,7 +285,8 @@ void PAVectorDiffusionApply3D(const int NE,
                               const Vector &_op,
                               const Vector &_x,
                               Vector &_y,
-                              int d1d = 0, int q1d = 0)
+                              const int d1d = 0,
+                              const int q1d = 0)
 {
    const int D1D = T_D1D ? T_D1D : d1d;
    const int Q1D = T_Q1D ? T_Q1D : q1d;
@@ -478,6 +481,7 @@ static void PAVectorDiffusionApply(const int dim,
                                    const Vector &x,
                                    Vector &y)
 {
+#ifndef MFEM_USE_JIT
    if (dim == 2)
    {
       switch ((D1D << 4 ) | Q1D)
@@ -507,6 +511,16 @@ static void PAVectorDiffusionApply(const int dim,
          default:   return PAVectorDiffusionApply3D(NE,B,G,Bt,Gt,op,x,y,D1D,Q1D);
       }
    }
+#else // MFEM_USE_JIT
+   if (dim == 2)
+   {
+      return PAVectorDiffusionApply2D(NE,B,G,Bt,Gt,op,x,y,D1D,Q1D);
+   }
+   if (dim == 3)
+   {
+      return PAVectorDiffusionApply3D(NE,B,G,Bt,Gt,op,x,y,D1D,Q1D);
+   }
+#endif // MFEM_USE_JIT
    MFEM_ABORT("Unknown kernel.");
 }
 

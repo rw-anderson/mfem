@@ -159,6 +159,7 @@ void GradientIntegrator::Setup(const FiniteElementSpace &trial_fes,
 }
 
 // PA Gradient Apply 2D kernel
+MFEM_KERNEL
 template<int T_TR_D1D = 0, int T_TE_D1D = 0, int T_Q1D = 0>
 static void PAGradientApply2D(const int NE,
                               const Array<double> &b,
@@ -272,6 +273,7 @@ static void PAGradientApply2D(const int NE,
 }
 
 // Shared memory PA Gradient Apply 2D kernel
+MFEM_KERNEL
 template<const int T_TR_D1D = 0, const int T_TE_D1D = 0, const int T_Q1D = 0,
          const int T_NBZ = 0>
 static void SmemPAGradientApply2D(const int NE,
@@ -290,6 +292,7 @@ static void SmemPAGradientApply2D(const int NE,
 }
 
 // PA Gradient Apply 2D kernel transpose
+MFEM_KERNEL
 template<int T_TR_D1D = 0, int T_TE_D1D = 0, int T_Q1D = 0>
 static void PAGradientApplyTranspose2D(const int NE,
                                        const Array<double> &bt,
@@ -307,6 +310,7 @@ static void PAGradientApplyTranspose2D(const int NE,
 }
 
 // PA Gradient Apply 3D kernel
+MFEM_KERNEL
 template<const int T_TR_D1D = 0, const int T_TE_D1D = 0, const int T_Q1D = 0>
 static void PAGradientApply3D(const int NE,
                               const Array<double> &b,
@@ -315,9 +319,9 @@ static void PAGradientApply3D(const int NE,
                               const Vector &_op,
                               const Vector &_x,
                               Vector &_y,
-                              int tr_d1d = 0,
-                              int te_d1d = 0,
-                              int q1d = 0)
+                              const int tr_d1d = 0,
+                              const int te_d1d = 0,
+                              const int q1d = 0)
 {
    const int TR_D1D = T_TR_D1D ? T_TR_D1D : tr_d1d;
    const int TE_D1D = T_TE_D1D ? T_TE_D1D : te_d1d;
@@ -486,6 +490,7 @@ static void PAGradientApply3D(const int NE,
 }
 
 // PA Gradient Apply 3D kernel
+MFEM_KERNEL
 template<const int T_TR_D1D = 0, const int T_TE_D1D = 0, const int T_Q1D = 0>
 static void PAGradientApplyTranspose3D(const int NE,
                                        const Array<double> &bt,
@@ -494,15 +499,16 @@ static void PAGradientApplyTranspose3D(const int NE,
                                        const Vector &_op,
                                        const Vector &_x,
                                        Vector &_y,
-                                       int tr_d1d = 0,
-                                       int te_d1d = 0,
-                                       int q1d = 0)
+                                       const int tr_d1d = 0,
+                                       const int te_d1d = 0,
+                                       const int q1d = 0)
 {
    // TODO
    MFEM_ASSERT(false, "Gradient PA Apply Transpose 3D NOT PROGRAMMED YET");
 }
 
 // Shared memory PA Gradient Apply 3D kernel
+MFEM_KERNEL
 template<const int T_TR_D1D = 0, const int T_TE_D1D = 0, const int T_Q1D = 0>
 static void SmemPAGradientApply3D(const int NE,
                                   const Array<double> &_b,
@@ -530,11 +536,9 @@ static void PAGradientApply(const int dim,
                             const Vector &op,
                             const Vector &x,
                             Vector &y,
-                            bool transpose=false)
+                            const bool transpose=false)
 {
-
-   //if (Device::Allows(Backend::RAJA_CUDA))
-   //{
+#ifndef MFEM_USE_JIT
    if (dim == 2)
    {
       switch ((TR_D1D << 4) | TE_D1D)
@@ -742,7 +746,30 @@ static void PAGradientApply(const int dim,
          return PAGradientApply3D(NE,B,G,Bt,op,x,y,TR_D1D,TE_D1D,Q1D);
       }
    }
-   //}
+#else // MFEM_USE_JIT
+   if (dim == 2)
+   {
+      if (transpose)
+      {
+         return PAGradientApplyTranspose2D(NE,B,G,Bt,op,x,y,TR_D1D,TE_D1D,Q1D);
+      }
+      else
+      {
+         return PAGradientApply2D(NE,B,G,Bt,op,x,y,TR_D1D,TE_D1D,Q1D);
+      }
+   }
+   if (dim == 3)
+   {
+      if (transpose)
+      {
+         return PAGradientApplyTranspose3D(NE,B,G,Bt,op,x,y,TR_D1D,TE_D1D,Q1D);
+      }
+      else
+      {
+         return PAGradientApply3D(NE,B,G,Bt,op,x,y,TR_D1D,TE_D1D,Q1D);
+      }
+   }
+#endif // MFEM_USE_JIT
    MFEM_ABORT("Unknown kernel.");
 }
 

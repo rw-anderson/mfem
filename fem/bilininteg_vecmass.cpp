@@ -189,6 +189,7 @@ static void PAVectorMassApply2D(const int NE,
    });
 }
 
+MFEM_KERNEL
 template<const int T_D1D = 0,
          const int T_Q1D = 0,
          const int T_NBZ = 0>
@@ -199,7 +200,8 @@ static void SmemPAVectorMassApply2D(const int NE,
                                     const Vector &x_,
                                     Vector &y_,
                                     const int d1d = 0,
-                                    const int q1d = 0)
+                                    const int q1d = 0,
+                                    const int nbz = 0)
 {
    constexpr int VDIM = 2;
    const int D1D = T_D1D ? T_D1D : d1d;
@@ -463,6 +465,7 @@ static void PAVectorMassApply3D(const int NE,
    });
 }
 
+MFEM_KERNEL
 template<const int T_D1D = 0,
          const int T_Q1D = 0>
 static void SmemPAVectorMassApply3D(const int NE,
@@ -647,6 +650,7 @@ static void PAVectorMassApply(const int dim,
                               const Vector &x,
                               Vector &y)
 {
+#ifndef MFEM_USE_JIT
    if (dim == 2)
    {
       switch ((D1D << 4 ) | Q1D)
@@ -707,6 +711,20 @@ static void PAVectorMassApply(const int dim,
          default:   return PAVectorMassApply3D(NE, B, Bt, op, x, y, D1D, Q1D);
       }
    }
+#else // MFEM_USE_JIT
+   if (dim == 2)
+   {
+      const int NBZ = (D1D==2||D1D==3) ? 16:
+                      (D1D==4||D1D==5) ? 8 :
+                      (D1D==6||D1D==7) ? 4 :
+                      (D1D==8||D1D==9) ? 2 : 1;
+      return SmemPAVectorMassApply2D(NE, B, Bt, op, x, y, D1D, Q1D, NBZ);
+   }
+   if (dim == 3)
+   {
+      return  SmemPAVectorMassApply3D(NE, B, Bt, op, x, y, D1D, Q1D);
+   }
+#endif // MFEM_USE_JIT
    MFEM_ABORT("Unknown kernel.");
 }
 

@@ -831,7 +831,8 @@ void VectorConvectionNLFIntegrator::Setup(const FiniteElementSpace &fes)
 }
 
 // PA Convection NL 2D kernel
-template<int T_D1D = 0, int T_Q1D = 0> static
+MFEM_KERNEL
+template<const int T_D1D = 0, const int T_Q1D = 0> static
 void PAConvectionNLApply2D(const int NE,
                            const Array<double> &b,
                            const Array<double> &g,
@@ -967,7 +968,8 @@ void PAConvectionNLApply2D(const int NE,
 }
 
 // PA Convection NL 3D kernel
-template<int T_D1D = 0, int T_Q1D = 0> static
+MFEM_KERNEL
+template<const int T_D1D = 0, const int T_Q1D = 0> static
 void PAConvectionNLApply3D(const int NE,
                            const Array<double> &b,
                            const Array<double> &g,
@@ -1264,6 +1266,7 @@ void VectorConvectionNLFIntegrator::MultPA(const Vector &x, Vector &y) const
    const Array<double> &B = maps->B;
    const Array<double> &G = maps->G;
    const Array<double> &Bt = maps->Bt;
+#ifndef MFEM_USE_JIT
    const int DQ = (D1D << 4) | Q1D;
    if (dim == 2)
    {
@@ -1295,6 +1298,16 @@ void VectorConvectionNLFIntegrator::MultPA(const Vector &x, Vector &y) const
          default: printf ("%x, %x(%d): %X", D1D, Q1D, Q1D, DQ);
       }
    }
+#else // MFEM_USE_JIT
+   if (dim == 2)
+   {
+      return PAConvectionNLApply2D(NE,B,G,Bt,Q,x,y,D1D,Q1D);
+   }
+   if (dim == 3)
+   {
+      return PAConvectionNLApply3D(NE,B,G,Bt,Q,x,y,D1D,Q1D);
+   }
+#endif // MFEM_USE_JIT
    MFEM_ABORT("Not yet implemented!");
 }
 
