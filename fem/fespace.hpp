@@ -917,6 +917,7 @@ protected:
 
    mutable bool use_tensor_products;
 
+public:
    // TODO:WP:this is temporary
    static const int MAX_NQ2D = 4000;
    static const int MAX_ND2D = 1000;
