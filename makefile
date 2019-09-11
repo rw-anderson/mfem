@@ -435,7 +435,7 @@ endif
 MPP_MFEM_CONFIG  = -DMFEM_CXX="$(MFEM_CXX)"
 MPP_MFEM_CONFIG += -DMFEM_INSTALL_DIR="$(MFEM_INSTALL_DIR)"
 MPP_MFEM_CONFIG += -DMFEM_BUILD_FLAGS="$(strip $(MFEM_BUILD_FLAGS))"
-mpp: $(BLD)general/mpp.cpp $(BLD)general/jit.hpp $(THIS_MK)
+mpp: $(SRC)general/mpp.cpp $(SRC)general/jit.hpp $(THIS_MK)
 	$(MFEM_CXX) -O3 -std=c++11 -o $(BLD)$(@) $(<) $(MPP_MFEM_CONFIG)
 
 all: examples miniapps $(TEST_DIRS)
