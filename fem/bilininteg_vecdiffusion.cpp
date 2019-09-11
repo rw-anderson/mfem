@@ -277,7 +277,7 @@ void PAVectorDiffusionApply2D(const int NE,
 MFEM_KERNEL
 template<const int T_D1D = 0,
          const int T_Q1D = 0> static
-void PAVectorDiffusionApply3D(const int NE,
+void PAVectorDiffusionApply3D(int NE,
                               const Array<double> &b,
                               const Array<double> &g,
                               const Array<double> &bt,
