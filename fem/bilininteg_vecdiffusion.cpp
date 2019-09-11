@@ -149,7 +149,7 @@ void VectorDiffusionIntegrator::Setup(const FiniteElementSpace &fes)
 }
 
 // PA Diffusion Apply 2D kernel
-MFEM_KERNEL
+MFEM_JIT
 template<int T_D1D = 0, int T_Q1D = 0> static
 void PAVectorDiffusionApply2D(const int NE,
                               const Array<double> &b,
@@ -274,7 +274,7 @@ void PAVectorDiffusionApply2D(const int NE,
 }
 
 // PA Diffusion Apply 3D kernel
-MFEM_KERNEL
+MFEM_JIT
 template<const int T_D1D = 0,
          const int T_Q1D = 0> static
 void PAVectorDiffusionApply3D(int NE,

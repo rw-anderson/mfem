@@ -159,7 +159,7 @@ void VectorDivergenceIntegrator::Setup(const FiniteElementSpace &trial_fes,
 }
 
 // PA VectorDivergence Apply 2D kernel
-MFEM_KERNEL
+MFEM_JIT
 template<const int T_TR_D1D = 0, const int T_TE_D1D = 0, const int T_Q1D = 0>
 static void PAVectorDivergenceApply2D(const int NE,
                                       const Array<double> &b,
@@ -280,7 +280,7 @@ static void PAVectorDivergenceApply2D(const int NE,
 }
 
 // Shared memory PA VectorDivergence Apply 2D kernel
-MFEM_KERNEL
+MFEM_JIT
 template<const int T_TR_D1D = 0, const int T_TE_D1D = 0,
          const int T_Q1D = 0, const int T_NBZ = 0>
 static void SmemPAVectorDivergenceApply2D(const int NE,
@@ -300,7 +300,7 @@ static void SmemPAVectorDivergenceApply2D(const int NE,
 }
 
 // PA VectorDivergence Apply 2D kernel transpose
-MFEM_KERNEL
+MFEM_JIT
 template<const int T_TR_D1D = 0, const int T_TE_D1D = 0, const int T_Q1D = 0>
 static void PAVectorDivergenceApplyTranspose2D(const int NE,
                                                const Array<double> &bt,
@@ -417,7 +417,7 @@ static void PAVectorDivergenceApplyTranspose2D(const int NE,
 }
 
 // PA Vector Divergence Apply 3D kernel
-MFEM_KERNEL
+MFEM_JIT
 template<const int T_TR_D1D = 0, const int T_TE_D1D = 0, const int T_Q1D = 0>
 static void PAVectorDivergenceApply3D(const int NE,
                                       const Array<double> &b,
@@ -601,7 +601,7 @@ static void PAVectorDivergenceApply3D(const int NE,
 }
 
 // PA Vector Divergence Apply 3D kernel
-MFEM_KERNEL
+MFEM_JIT
 template<const int T_TR_D1D = 0, const int T_TE_D1D = 0, const int T_Q1D = 0>
 static void PAVectorDivergenceApplyTranspose3D(const int NE,
                                                const Array<double> &bt,
@@ -780,7 +780,7 @@ static void PAVectorDivergenceApplyTranspose3D(const int NE,
 }
 
 // Shared memory PA Vector Divergence Apply 3D kernel
-MFEM_KERNEL
+MFEM_JIT
 template<const int T_TR_D1D = 0,
          const int T_TE_D1D = 0,
          const int T_Q1D = 0>

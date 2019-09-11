@@ -159,7 +159,7 @@ void GradientIntegrator::Setup(const FiniteElementSpace &trial_fes,
 }
 
 // PA Gradient Apply 2D kernel
-MFEM_KERNEL
+MFEM_JIT
 template<int T_TR_D1D = 0, int T_TE_D1D = 0, int T_Q1D = 0>
 static void PAGradientApply2D(const int NE,
                               const Array<double> &b,
@@ -273,7 +273,7 @@ static void PAGradientApply2D(const int NE,
 }
 
 // Shared memory PA Gradient Apply 2D kernel
-MFEM_KERNEL
+MFEM_JIT
 template<const int T_TR_D1D = 0, const int T_TE_D1D = 0, const int T_Q1D = 0,
          const int T_NBZ = 0>
 static void SmemPAGradientApply2D(const int NE,
@@ -292,7 +292,7 @@ static void SmemPAGradientApply2D(const int NE,
 }
 
 // PA Gradient Apply 2D kernel transpose
-MFEM_KERNEL
+MFEM_JIT
 template<int T_TR_D1D = 0, int T_TE_D1D = 0, int T_Q1D = 0>
 static void PAGradientApplyTranspose2D(const int NE,
                                        const Array<double> &bt,
@@ -310,7 +310,7 @@ static void PAGradientApplyTranspose2D(const int NE,
 }
 
 // PA Gradient Apply 3D kernel
-MFEM_KERNEL
+MFEM_JIT
 template<const int T_TR_D1D = 0, const int T_TE_D1D = 0, const int T_Q1D = 0>
 static void PAGradientApply3D(const int NE,
                               const Array<double> &b,
@@ -490,7 +490,7 @@ static void PAGradientApply3D(const int NE,
 }
 
 // PA Gradient Apply 3D kernel
-MFEM_KERNEL
+MFEM_JIT
 template<const int T_TR_D1D = 0, const int T_TE_D1D = 0, const int T_Q1D = 0>
 static void PAGradientApplyTranspose3D(const int NE,
                                        const Array<double> &bt,
@@ -508,7 +508,7 @@ static void PAGradientApplyTranspose3D(const int NE,
 }
 
 // Shared memory PA Gradient Apply 3D kernel
-MFEM_KERNEL
+MFEM_JIT
 template<const int T_TR_D1D = 0, const int T_TE_D1D = 0, const int T_Q1D = 0>
 static void SmemPAGradientApply3D(const int NE,
                                   const Array<double> &_b,

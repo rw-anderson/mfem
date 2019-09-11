@@ -189,7 +189,7 @@ static void PAVectorMassApply2D(const int NE,
    });
 }
 
-MFEM_KERNEL
+MFEM_JIT
 template<const int T_D1D = 0,
          const int T_Q1D = 0,
          const int T_NBZ = 0>
@@ -465,7 +465,7 @@ static void PAVectorMassApply3D(const int NE,
    });
 }
 
-MFEM_KERNEL
+MFEM_JIT
 template<const int T_D1D = 0,
          const int T_Q1D = 0>
 static void SmemPAVectorMassApply3D(const int NE,
