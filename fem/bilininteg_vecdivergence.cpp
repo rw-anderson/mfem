@@ -426,9 +426,9 @@ static void PAVectorDivergenceApply3D(const int NE,
                                       const Vector &_op,
                                       const Vector &_x,
                                       Vector &_y,
-                                      int tr_d1d = 0,
-                                      int te_d1d = 0,
-                                      int q1d = 0)
+                                      const int tr_d1d = 0,
+                                      const int te_d1d = 0,
+                                      const int q1d = 0)
 {
    const int TR_D1D = T_TR_D1D ? T_TR_D1D : tr_d1d;
    const int TE_D1D = T_TE_D1D ? T_TE_D1D : te_d1d;
@@ -610,9 +610,9 @@ static void PAVectorDivergenceApplyTranspose3D(const int NE,
                                                const Vector &_op,
                                                const Vector &_x,
                                                Vector &_y,
-                                               int tr_d1d = 0,
-                                               int te_d1d = 0,
-                                               int q1d = 0)
+                                               const int tr_d1d = 0,
+                                               const int te_d1d = 0,
+                                               const int q1d = 0)
 {
    const int TR_D1D = T_TR_D1D ? T_TR_D1D : tr_d1d;
    const int TE_D1D = T_TE_D1D ? T_TE_D1D : te_d1d;
