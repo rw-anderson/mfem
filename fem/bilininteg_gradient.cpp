@@ -26,26 +26,29 @@ static void PAGradientSetup2D(const int Q1D,
                               const Array<double> &w,
                               const Vector &j,
                               const double COEFF,
-                              Vector &op)
+                              Vector &d)
 {
-   const int NQ = Q1D*Q1D;
    auto W = w.Read();
-   auto J = Reshape(j.Read(), NQ, 2, 2, NE);
-   auto y = Reshape(op.Write(), NQ, 2, 2, NE);
+   auto J = Reshape(j.Read(), Q1D*Q1D, 2, 2, NE);
+   auto D = Reshape(d.Write(), Q1D*Q1D, 2, 2, NE);
 
-   MFEM_FORALL(e, NE,
+   MFEM_FORALL_2D(e, NE, Q1D, Q1D, 1,
    {
-      for (int q = 0; q < NQ; ++q)
+      MFEM_FOREACH_THREAD(qx, x, Q1D)
       {
-         const double J11 = J(q,0,0,e);
-         const double J12 = J(q,0,1,e);
-         const double J21 = J(q,1,0,e);
-         const double J22 = J(q,1,1,e);
-         // Store wq * Q * adj(J)
-         y(q,0,0,e) = W[q] * COEFF *  J22; // 1,1
-         y(q,0,1,e) = W[q] * COEFF * -J12; // 1,2
-         y(q,1,0,e) = W[q] * COEFF * -J21; // 2,1
-         y(q,1,1,e) = W[q] * COEFF *  J11; // 2,2
+         MFEM_FOREACH_THREAD(qy, y, Q1D)
+         {
+            const int q = qx + qy * Q1D;
+            const double J11 = J(q,0,0,e);
+            const double J12 = J(q,0,1,e);
+            const double J21 = J(q,1,0,e);
+            const double J22 = J(q,1,1,e);
+            // Store wq * Q * adj(J)
+            D(q,0,0,e) = W[q] * COEFF *  J22; // 1,1
+            D(q,0,1,e) = W[q] * COEFF * -J12; // 1,2
+            D(q,1,0,e) = W[q] * COEFF * -J21; // 2,1
+            D(q,1,1,e) = W[q] * COEFF *  J11; // 2,2
+         }
       }
    });
 }
@@ -56,95 +59,53 @@ static void PAGradientSetup3D(const int Q1D,
                               const Array<double> &w,
                               const Vector &j,
                               const double COEFF,
-                              Vector &op)
+                              Vector &d)
 {
-   const int NQ = Q1D*Q1D*Q1D;
    auto W = w.Read();
-   auto J = Reshape(j.Read(), NQ, 3, 3, NE);
-   auto y = Reshape(op.Write(), NQ, 3, 3, NE);
-   MFEM_FORALL(e, NE,
+   auto J = Reshape(j.Read(), Q1D*Q1D*Q1D, 3, 3, NE);
+   auto D = Reshape(d.Write(), Q1D*Q1D*Q1D, 3, 3, NE);
+   const int T1D = Q1D > 8 ? 8 : Q1D;
+   MFEM_FORALL_3D(e, NE, T1D, T1D, T1D,
    {
-      for (int q = 0; q < NQ; ++q)
+      MFEM_FOREACH_THREAD(qx, x, Q1D)
       {
-         const double J11 = J(q,0,0,e);
-         const double J21 = J(q,1,0,e);
-         const double J31 = J(q,2,0,e);
-         const double J12 = J(q,0,1,e);
-         const double J22 = J(q,1,1,e);
-         const double J32 = J(q,2,1,e);
-         const double J13 = J(q,0,2,e);
-         const double J23 = J(q,1,2,e);
-         const double J33 = J(q,2,2,e);
-         const double cw  = W[q] * COEFF;
-         // adj(J)
-         const double A11 = (J22 * J33) - (J23 * J32);
-         const double A12 = (J32 * J13) - (J12 * J33);
-         const double A13 = (J12 * J23) - (J22 * J13);
-         const double A21 = (J31 * J23) - (J21 * J33);
-         const double A22 = (J11 * J33) - (J13 * J31);
-         const double A23 = (J21 * J13) - (J11 * J23);
-         const double A31 = (J21 * J32) - (J31 * J22);
-         const double A32 = (J31 * J12) - (J11 * J32);
-         const double A33 = (J11 * J22) - (J12 * J21);
-         // Store wq * Q * adj(J)
-         y(q,0,0,e) = cw * A11; // 1,1
-         y(q,0,1,e) = cw * A12; // 1,2
-         y(q,0,2,e) = cw * A13; // 1,3
-         y(q,1,0,e) = cw * A21; // 2,1
-         y(q,1,1,e) = cw * A22; // 2,2
-         y(q,1,2,e) = cw * A23; // 2,3
-         y(q,2,0,e) = cw * A31; // 3,1
-         y(q,2,1,e) = cw * A32; // 3,2
-         y(q,2,2,e) = cw * A33; // 3,3
-      }
-   });
-}
-
-static void PAGradientSetup3DXYZ(const int Q1D,
-                                 const int NE,
-                                 const Array<double> &w,
-                                 const Vector &j,
-                                 const double COEFF,
-                                 Vector &op)
-{
-   const int NQ = Q1D*Q1D*Q1D;
-   auto W = w.Read();
-   auto J = Reshape(j.Read(), NQ, 3, 3, NE);
-   auto y = Reshape(op.Write(), NQ, 3, 3, NE);
-   MFEM_FORALL_2D(e, NE, NQ, 1, 1,
-   {
-      MFEM_FOREACH_THREAD(q,x,NQ)
-      {
-         const double J11 = J(q,0,0,e);
-         const double J21 = J(q,1,0,e);
-         const double J31 = J(q,2,0,e);
-         const double J12 = J(q,0,1,e);
-         const double J22 = J(q,1,1,e);
-         const double J32 = J(q,2,1,e);
-         const double J13 = J(q,0,2,e);
-         const double J23 = J(q,1,2,e);
-         const double J33 = J(q,2,2,e);
-         const double cw  = W[q] * COEFF;
-         // adj(J)
-         const double A11 = (J22 * J33) - (J23 * J32);
-         const double A12 = (J32 * J13) - (J12 * J33);
-         const double A13 = (J12 * J23) - (J22 * J13);
-         const double A21 = (J31 * J23) - (J21 * J33);
-         const double A22 = (J11 * J33) - (J13 * J31);
-         const double A23 = (J21 * J13) - (J11 * J23);
-         const double A31 = (J21 * J32) - (J31 * J22);
-         const double A32 = (J31 * J12) - (J11 * J32);
-         const double A33 = (J11 * J22) - (J12 * J21);
-         // Store wq * Q * adj(J)
-         y(q,0,0,e) = cw * A11; // 1,1
-         y(q,0,1,e) = cw * A12; // 1,2
-         y(q,0,2,e) = cw * A13; // 1,3
-         y(q,1,0,e) = cw * A21; // 2,1
-         y(q,1,1,e) = cw * A22; // 2,2
-         y(q,1,2,e) = cw * A23; // 2,3
-         y(q,2,0,e) = cw * A31; // 3,1
-         y(q,2,1,e) = cw * A32; // 3,2
-         y(q,2,2,e) = cw * A33; // 3,3
+         MFEM_FOREACH_THREAD(qy, y, Q1D)
+         {
+            MFEM_FOREACH_THREAD(qz, z, Q1D)
+            {
+               const int q = qx + (qy + qz * Q1D) * Q1D;
+               const double J11 = J(q,0,0,e);
+               const double J21 = J(q,1,0,e);
+               const double J31 = J(q,2,0,e);
+               const double J12 = J(q,0,1,e);
+               const double J22 = J(q,1,1,e);
+               const double J32 = J(q,2,1,e);
+               const double J13 = J(q,0,2,e);
+               const double J23 = J(q,1,2,e);
+               const double J33 = J(q,2,2,e);
+               const double cw  = W[q] * COEFF;
+               // adj(J)
+               const double A11 = (J22 * J33) - (J23 * J32);
+               const double A12 = (J32 * J13) - (J12 * J33);
+               const double A13 = (J12 * J23) - (J22 * J13);
+               const double A21 = (J31 * J23) - (J21 * J33);
+               const double A22 = (J11 * J33) - (J13 * J31);
+               const double A23 = (J21 * J13) - (J11 * J23);
+               const double A31 = (J21 * J32) - (J31 * J22);
+               const double A32 = (J31 * J12) - (J11 * J32);
+               const double A33 = (J11 * J22) - (J12 * J21);
+               // Store wq * Q * adj(J)
+               D(q,0,0,e) = cw * A11; // 1,1
+               D(q,0,1,e) = cw * A12; // 1,2
+               D(q,0,2,e) = cw * A13; // 1,3
+               D(q,1,0,e) = cw * A21; // 2,1
+               D(q,1,1,e) = cw * A22; // 2,2
+               D(q,1,2,e) = cw * A23; // 2,3
+               D(q,2,0,e) = cw * A31; // 3,1
+               D(q,2,1,e) = cw * A32; // 3,2
+               D(q,2,2,e) = cw * A33; // 3,3
+            }
+         }
       }
    });
 }
@@ -158,24 +119,16 @@ static void PAGradientSetup(const int dim,
                             const Array<double> &W,
                             const Vector &J,
                             const double COEFF,
-                            Vector &op)
+                            Vector &D)
 {
-   static const bool xyz = getenv("XYZ");
    if (dim == 1) { MFEM_ABORT("dim==1 not supported in PAGradientSetup"); }
    if (dim == 2)
    {
-      PAGradientSetup2D(Q1D, NE, W, J, COEFF, op);
+      PAGradientSetup2D(Q1D, NE, W, J, COEFF, D);
    }
    if (dim == 3)
    {
-      if (!xyz)
-      {
-         PAGradientSetup3D(Q1D, NE, W, J, COEFF, op);
-      }
-      else
-      {
-         PAGradientSetup3DXYZ(Q1D, NE, W, J, COEFF, op);
-      }
+      PAGradientSetup3D(Q1D, NE, W, J, COEFF, D);
    }
 }
 
@@ -332,8 +285,7 @@ static void PAGradientApply2D(const int NE,
 
 // Shared memory PA Gradient Apply 2D kernel
 MFEM_JIT
-template<const int T_TR_D1D = 0, const int T_TE_D1D = 0, const int T_Q1D = 0,
-         const int T_NBZ = 0>
+template<int T_TR_D1D = 0, int T_TE_D1D = 0, int T_Q1D = 0, int T_NBZ = 0>
 static void SmemPAGradientApply2D(const int NE,
                                   const Array<double> &_b,
                                   const Array<double> &_g,
@@ -369,7 +321,7 @@ static void PAGradientApplyTranspose2D(const int NE,
 
 // PA Gradient Apply 3D kernel
 MFEM_JIT
-template<const int T_TR_D1D = 0, const int T_TE_D1D = 0, const int T_Q1D = 0>
+template<int T_TR_D1D = 0, int T_TE_D1D = 0, int T_Q1D = 0>
 static void PAGradientApply3D(const int NE,
                               const Array<double> &b,
                               const Array<double> &g,
@@ -549,7 +501,7 @@ static void PAGradientApply3D(const int NE,
 
 // PA Gradient Apply 3D kernel
 MFEM_JIT
-template<const int T_TR_D1D = 0, const int T_TE_D1D = 0, const int T_Q1D = 0>
+template<int T_TR_D1D = 0, int T_TE_D1D = 0, int T_Q1D = 0>
 static void PAGradientApplyTranspose3D(const int NE,
                                        const Array<double> &bt,
                                        const Array<double> &gt,
@@ -567,12 +519,12 @@ static void PAGradientApplyTranspose3D(const int NE,
 
 // Shared memory PA Gradient Apply 3D kernel
 MFEM_JIT
-template<const int T_TR_D1D = 0, const int T_TE_D1D = 0, const int T_Q1D = 0>
+template<int T_TR_D1D = 0, int T_TE_D1D = 0, int T_Q1D = 0>
 static void SmemPAGradientApply3D(const int NE,
                                   const Array<double> &b_,
                                   const Array<double> &g_,
                                   const Array<double> &bt_,
-                                  const Vector &q_,
+                                  const Vector &d_,
                                   const Vector &x_,
                                   Vector &y_,
                                   const int tr_d1d = 0,
@@ -586,12 +538,13 @@ static void SmemPAGradientApply3D(const int NE,
    MFEM_VERIFY(TR_D1D <= MAX_D1D, "");
    MFEM_VERIFY(TE_D1D <= MAX_D1D, "");
    MFEM_VERIFY(TR_D1D <= Q1D, "");
+   MFEM_VERIFY(TE_D1D <= Q1D, "");
    MFEM_VERIFY(Q1D <= MAX_Q1D, "");
 
    auto b = Reshape(b_.Read(), Q1D, TR_D1D);
    auto g = Reshape(g_.Read(), Q1D, TR_D1D);
    auto bt = Reshape(bt_.Read(), TE_D1D, Q1D);
-   auto Q = Reshape(q_.Read(), Q1D*Q1D*Q1D, 3, 3, NE);
+   auto D = Reshape(d_.Read(), Q1D*Q1D*Q1D, 3, 3, NE);
    auto x = Reshape(x_.Read(), TR_D1D, TR_D1D, TR_D1D, NE);
    auto y = Reshape(y_.ReadWrite(), TE_D1D, TE_D1D, TE_D1D, 3, NE);
 
@@ -615,15 +568,19 @@ static void SmemPAGradientApply3D(const int NE,
       double (*X)[MD1][MD1]    = (double (*)[MD1][MD1]) (sm0+2);
       double (*DDQ0)[MD1][MQ1] = (double (*)[MD1][MQ1]) (sm0+0);
       double (*DDQ1)[MD1][MQ1] = (double (*)[MD1][MQ1]) (sm0+1);
+
       double (*DQQ0)[MQ1][MQ1] = (double (*)[MQ1][MQ1]) (sm1+0);
       double (*DQQ1)[MQ1][MQ1] = (double (*)[MQ1][MQ1]) (sm1+1);
       double (*DQQ2)[MQ1][MQ1] = (double (*)[MQ1][MQ1]) (sm1+2);
+
       double (*QQQ0)[MQ1][MQ1] = (double (*)[MQ1][MQ1]) (sm0+0);
       double (*QQQ1)[MQ1][MQ1] = (double (*)[MQ1][MQ1]) (sm0+1);
       double (*QQQ2)[MQ1][MQ1] = (double (*)[MQ1][MQ1]) (sm0+2);
+
       double (*QQD0)[MQ1][MD1] = (double (*)[MQ1][MD1]) (sm1+0);
       double (*QQD1)[MQ1][MD1] = (double (*)[MQ1][MD1]) (sm1+1);
       double (*QQD2)[MQ1][MD1] = (double (*)[MQ1][MD1]) (sm1+2);
+
       double (*QDD0)[MD1][MD1] = (double (*)[MD1][MD1]) (sm0+0);
       double (*QDD1)[MD1][MD1] = (double (*)[MD1][MD1]) (sm0+1);
       double (*QDD2)[MD1][MD1] = (double (*)[MD1][MD1]) (sm0+2);
@@ -723,9 +680,9 @@ static void SmemPAGradientApply3D(const int NE,
                const double gX = QQQ0[qz][qy][qx];
                const double gY = QQQ1[qz][qy][qx];
                const double gZ = QQQ2[qz][qy][qx];
-               QQQ0[qz][qy][qx] = (Q(q,0,0,e)*gX) + (Q(q,1,0,e)*gY) + (Q(q,2,0,e)*gZ);
-               QQQ1[qz][qy][qx] = (Q(q,0,1,e)*gX) + (Q(q,1,1,e)*gY) + (Q(q,2,1,e)*gZ);
-               QQQ2[qz][qy][qx] = (Q(q,0,2,e)*gX) + (Q(q,1,2,e)*gY) + (Q(q,2,2,e)*gZ);
+               QQQ0[qz][qy][qx] = (D(q,0,0,e)*gX) + (D(q,1,0,e)*gY) + (D(q,2,0,e)*gZ);
+               QQQ1[qz][qy][qx] = (D(q,0,1,e)*gX) + (D(q,1,1,e)*gY) + (D(q,2,1,e)*gZ);
+               QQQ2[qz][qy][qx] = (D(q,0,2,e)*gX) + (D(q,1,2,e)*gY) + (D(q,2,2,e)*gZ);
             }
          }
       }
@@ -1031,7 +988,6 @@ static void PAGradientApply(const int dim,
       }
    }
 #else // MFEM_USE_JIT
-   static const bool xyz = getenv("XYZ");
    if (dim == 2)
    {
       if (transpose)
@@ -1051,14 +1007,8 @@ static void PAGradientApply(const int dim,
       }
       else
       {
-         if (xyz)
-         {
-            return SmemPAGradientApply3D(NE,B,G,Bt,op,x,y,TR_D1D,TE_D1D,Q1D);
-         }
-         else
-         {
-            return PAGradientApply3D(NE,B,G,Bt,op,x,y,TR_D1D,TE_D1D,Q1D);
-         }
+         //return PAGradientApply3D(NE,B,G,Bt,op,x,y,TR_D1D,TE_D1D,Q1D);
+         return SmemPAGradientApply3D(NE,B,G,Bt,op,x,y,TR_D1D,TE_D1D,Q1D);
       }
    }
 #endif // MFEM_USE_JIT
