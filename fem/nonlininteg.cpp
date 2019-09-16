@@ -752,7 +752,6 @@ void VectorConvectionNLFIntegrator::Setup(const FiniteElementSpace &fes)
    const FiniteElement &el = *fes.GetFE(0);
    ElementTransformation &T = *mesh->GetElementTransformation(0);
    const IntegrationRule *ir = IntRule ? IntRule : &GetRule(el, T);
-   dbg("GetOrder: %d",ir->GetOrder());
    dim = mesh->Dimension();
    ne = fes.GetMesh()->GetNE();
    nq = ir->GetNPoints();
@@ -1548,7 +1547,6 @@ void VectorConvectionNLFIntegrator::MultPA(const Vector &x, Vector &y) const
       }
    }
 #else // MFEM_USE_JIT
-   printf ("D1D=%d, Q1D=%d\n", D1D, Q1D);
    if (dim == 2)
    {
       return PAConvectionNLApply2D(NE,B,G,Bt,Q,x,y,D1D,Q1D);
