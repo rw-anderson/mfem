@@ -702,7 +702,9 @@ const IntegrationRule&
 VectorConvectionNLFIntegrator::GetRule(const FiniteElement &fe,
                                        ElementTransformation &T)
 {
-   const int order = 2 * fe.GetOrder() + T.OrderGrad(&fe);
+   const int order = 2 * fe.GetOrder() + 1; // D1D = Q1D
+   //const int order = 2 * fe.GetOrder() + 2; // D1D + 1 = Q1D
+   //const int order = 2 * fe.GetOrder() + T.OrderGrad(&fe);
    return IntRules.Get(fe.GetGeomType(), order);
 }
 
@@ -750,6 +752,7 @@ void VectorConvectionNLFIntegrator::Setup(const FiniteElementSpace &fes)
    const FiniteElement &el = *fes.GetFE(0);
    ElementTransformation &T = *mesh->GetElementTransformation(0);
    const IntegrationRule *ir = IntRule ? IntRule : &GetRule(el, T);
+   dbg("GetOrder: %d",ir->GetOrder());
    dim = mesh->Dimension();
    ne = fes.GetMesh()->GetNE();
    nq = ir->GetNPoints();
@@ -1545,6 +1548,7 @@ void VectorConvectionNLFIntegrator::MultPA(const Vector &x, Vector &y) const
       }
    }
 #else // MFEM_USE_JIT
+   printf ("D1D=%d, Q1D=%d\n", D1D, Q1D);
    if (dim == 2)
    {
       return PAConvectionNLApply2D(NE,B,G,Bt,Q,x,y,D1D,Q1D);
