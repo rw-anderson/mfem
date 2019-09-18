@@ -1555,8 +1555,8 @@ void VectorConvectionNLFIntegrator::MultPA(const Vector &x, Vector &y) const
    }
    if (dim == 3)
    {
-      return PAConvectionNLApply3D(NE,B,G,Bt,Q,x,y,D1D,Q1D);
-      //return SmemPAConvectionNLApply3D(NE,B,G,Q,x,y,D1D,Q1D);
+      //return PAConvectionNLApply3D(NE,B,G,Bt,Q,x,y,D1D,Q1D);
+      return SmemPAConvectionNLApply3D(NE,B,G,Q,x,y,D1D,Q1D);
    }
 #endif // MFEM_USE_JIT
    MFEM_ABORT("Not yet implemented!");
