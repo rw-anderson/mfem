@@ -1035,59 +1035,6 @@ static void SmemPADiffusionApply3D(const int NE,
    });
 }
 
-#define for_Q(k)\
-{\
-   MFEM_SYNC_THREAD;\
-   MFEM_FOREACH_THREAD(j,y,Q1D)\
-   {\
-      MFEM_FOREACH_THREAD(i,x,Q1D)\
-      {\
-         double qr = 0.0, qs = 0.0;\
-         MFEM_EXCLUSIVE_GET(r_qt) = 0.0;\
-         for (int m = 0; m < Q1D; m++)\
-         {\
-            double Dim = s_D[i][m];\
-            double Djm = s_D[j][m];\
-            double Dkm = s_D[k][m];\
-            qr += Dim*s_Iq[k][j][m];\
-            qs += Djm*s_Iq[k][m][i];\
-            MFEM_EXCLUSIVE_GET(r_qt) += Dkm*s_Iq[m][j][i];\
-         }\
-         const double qt = MFEM_EXCLUSIVE_GET(r_qt);\
-         const int q = i + ((j*Q1D) + (k*Q1D*Q1D));\
-         const double G00 = d(q,0,e);\
-         const double G01 = d(q,1,e);\
-         const double G02 = d(q,2,e);\
-         const double G11 = d(q,3,e);\
-         const double G12 = d(q,4,e);\
-         const double G22 = d(q,5,e);\
-         s_Gqr[j][i] = (G00*qr + G01*qs + G02*qt); \
-s_Gqs[j][i] = (G01*qr + G11*qs + G12*qt); \
-MFEM_EXCLUSIVE_GET(r_qt) = G02*qr + G12*qs + G22*qt; \
-MFEM_EXCLUSIVE_INC; \
-}\
-}\
-MFEM_SYNC_THREAD; \
-MFEM_FOREACH_THREAD(j,y,Q1D)\
-{\
-MFEM_FOREACH_THREAD(i,x,Q1D)\
-{   \
-   double Aqtmp = 0; \
-   for (int m = 0; m < Q1D; m++)\
-   {      \
-      double Dmi = s_D[m][i]; \
-      double Dmj = s_D[m][j]; \
-      double Dkm = s_D[k][m]; \
-      Aqtmp += Dmi*s_Gqr[j][m]; \
-      Aqtmp += Dmj*s_Gqs[m][i]; \
-      MFEM_EXCLUSIVE_GET(r_Aq)[m] += Dkm*MFEM_EXCLUSIVE_GET(r_qt); \
-   }\
-   MFEM_EXCLUSIVE_GET(r_Aq)[k] += Aqtmp; \
-   MFEM_EXCLUSIVE_INC; \
-}\
-}\
-MFEM_SYNC_THREAD; \
-}
 
 MFEM_JIT
 template<int T_D1D = 0, int T_Q1D = 0>
@@ -1108,11 +1055,11 @@ void BP3Global_v0(const int NE,
    MFEM_VERIFY(D1D <= MD1, "");
    MFEM_VERIFY(Q1D <= MQ1, "");
 
-   auto b = Reshape(b_.Read(), Q1D, D1D);
-   auto g = Reshape(g_.Read(), Q1D, Q1D);
-   auto d = Reshape(d_.Read(), Q1D*Q1D*Q1D, 6, NE);
-   auto x = Reshape(x_.Read(), D1D, D1D, D1D, NE);
-   auto y = Reshape(y_.ReadWrite(), D1D, D1D, D1D, NE);
+   auto b = Reshape(_b.Read(), Q1D, D1D);
+   auto g = Reshape(_cog.Read(), Q1D, Q1D);
+   auto d = Reshape(_d.Read(), Q1D*Q1D*Q1D, 6, NE);
+   auto x = Reshape(_x.Read(), D1D, D1D, D1D, NE);
+   auto y = Reshape(_y.ReadWrite(), D1D, D1D, D1D, NE);
 
    MFEM_FORALL_2D(e, NE, Q1D, Q1D, 1,
    {
@@ -1499,6 +1446,7 @@ static void PADiffusionApply(const int dim,
       MFEM_ABORT("OCCA PADiffusionApply unknown kernel!");
    }
 #endif // MFEM_USE_OCCA
+
 #ifndef MFEM_USE_JIT
    static bool BP3Global = getenv("LBP");
    if (BP3Global)
@@ -1566,27 +1514,6 @@ static void PADiffusionApply(const int dim,
       if (dim == 3)
       {
          return SmemPADiffusionApply3D(NE,B,G,op,x,y,D1D,Q1D);
-=======
-   else if (dim == 3)
-   {
-      const int DQ = (D1D << 4 ) | Q1D;
-      //printf("\n\033[33m[Diff] D1D= %d, Q1D= %d => %x\033[m", D1D, Q1D, DQ);
-      static bool BP3Global = getenv("LBP");
-      if (BP3Global)
-      {
-         Array<double> coG(Q1D*Q1D);
-         coG.GetMemory().UseDevice(true);
-         CeedBasisGetCollocatedGrad(D1D, Q1D, B, G, coG);
-         switch (DQ)
-         {
-         }
-      }
-      else
-      {
-         switch (DQ)
-         {
-         }
->>>>>>> okina-exclusive
       }
    }
 #endif // MFEM_USE_JIT
