@@ -312,18 +312,21 @@ static void OccaPADiffusionApply3D(const int D1D,
 }
 #endif // MFEM_USE_OCCA
 
+
 // PA Diffusion Apply 2D kernel
-template<int T_D1D = 0, int T_Q1D = 0> static
-void PADiffusionApply2D(const int NE,
-                        const Array<double> &b,
-                        const Array<double> &g,
-                        const Array<double> &bt,
-                        const Array<double> &gt,
-                        const Vector &_op,
-                        const Vector &_x,
-                        Vector &_y,
-                        const int d1d = 0,
-                        const int q1d = 0)
+#ifndef MFEM_USE_JIT
+template<const int T_D1D = 0,
+         const int T_Q1D = 0>
+static void PADiffusionApply2D(const int NE,
+                               const Array<double> &b,
+                               const Array<double> &g,
+                               const Array<double> &bt,
+                               const Array<double> &gt,
+                               const Vector &_op,
+                               const Vector &_x,
+                               Vector &_y,
+                               const int d1d = 0,
+                               const int q1d = 0)
 {
    const int D1D = T_D1D ? T_D1D : d1d;
    const int Q1D = T_Q1D ? T_Q1D : q1d;
@@ -431,21 +434,22 @@ void PADiffusionApply2D(const int NE,
       }
    });
 }
+#endif
 
 // Shared memory PA Diffusion Apply 2D kernel
+MFEM_JIT
 template<const int T_D1D = 0,
          const int T_Q1D = 0,
          const int T_NBZ = 0>
 static void SmemPADiffusionApply2D(const int NE,
                                    const Array<double> &_b,
                                    const Array<double> &_g,
-                                   const Array<double> &_bt,
-                                   const Array<double> &_gt,
                                    const Vector &_op,
                                    const Vector &_x,
                                    Vector &_y,
                                    const int d1d = 0,
-                                   const int q1d = 0)
+                                   const int q1d = 0,
+                                   const int nbz = 0)
 {
    const int D1D = T_D1D ? T_D1D : d1d;
    const int Q1D = T_Q1D ? T_Q1D : q1d;
@@ -594,17 +598,19 @@ static void SmemPADiffusionApply2D(const int NE,
 
 
 // PA Diffusion Apply 3D kernel
+#ifndef MFEM_USE_JIT
 template<const int T_D1D = 0,
-         const int T_Q1D = 0> static
-void PADiffusionApply3D(const int NE,
-                        const Array<double> &b,
-                        const Array<double> &g,
-                        const Array<double> &bt,
-                        const Array<double> &gt,
-                        const Vector &_op,
-                        const Vector &_x,
-                        Vector &_y,
-                        int d1d = 0, int q1d = 0)
+         const int T_Q1D = 0>
+static void PADiffusionApply3D(const int NE,
+                               const Array<double> &b,
+                               const Array<double> &g,
+                               const Array<double> &bt,
+                               const Array<double> &gt,
+                               const Vector &_op,
+                               const Vector &_x,
+                               Vector &_y,
+                               const int d1d = 0,
+                               const int q1d = 0)
 {
    const int D1D = T_D1D ? T_D1D : d1d;
    const int Q1D = T_Q1D ? T_Q1D : q1d;
@@ -782,15 +788,15 @@ void PADiffusionApply3D(const int NE,
       }
    });
 }
+#endif
 
 // Shared memory PA Diffusion Apply 3D kernel
+MFEM_JIT
 template<const int T_D1D = 0,
          const int T_Q1D = 0>
 static void SmemPADiffusionApply3D(const int NE,
                                    const Array<double> &_b,
                                    const Array<double> &_g,
-                                   const Array<double> &_bt,
-                                   const Array<double> &_gt,
                                    const Vector &_op,
                                    const Vector &_x,
                                    Vector &_y,
@@ -1526,22 +1532,8 @@ static void PADiffusionApply(const int dim,
       MFEM_ABORT("OCCA PADiffusionApply unknown kernel!");
    }
 #endif // MFEM_USE_OCCA
-   /*if (dim == 2)
-   {
-      switch ((D1D << 4 ) | Q1D)
-      {
-         case 0x22: return SmemPADiffusionApply2D<2,2,16>(NE,B,G,Bt,Gt,op,x,y);
-         case 0x33: return SmemPADiffusionApply2D<3,3,16>(NE,B,G,Bt,Gt,op,x,y);
-         case 0x44: return SmemPADiffusionApply2D<4,4,8>(NE,B,G,Bt,Gt,op,x,y);
-         case 0x55: return SmemPADiffusionApply2D<5,5,8>(NE,B,G,Bt,Gt,op,x,y);
-         case 0x66: return SmemPADiffusionApply2D<6,6,4>(NE,B,G,Bt,Gt,op,x,y);
-         case 0x77: return SmemPADiffusionApply2D<7,7,4>(NE,B,G,Bt,Gt,op,x,y);
-         case 0x88: return SmemPADiffusionApply2D<8,8,2>(NE,B,G,Bt,Gt,op,x,y);
-         case 0x99: return SmemPADiffusionApply2D<9,9,2>(NE,B,G,Bt,Gt,op,x,y);
-         default:   return PADiffusionApply2D(NE,B,G,Bt,Gt,op,x,y,D1D,Q1D);
-      }
-   }
-   else */
+
+#ifdef MFEM_USE_JIT      
    static bool BP3Global = getenv("LBP");
    if (BP3Global)
    {
@@ -1581,6 +1573,7 @@ static void PADiffusionApply(const int dim,
          }
       }
    }
+#endif // MFEM_USE_JIT
    MFEM_ABORT("Unknown kernel.");
 }
 
