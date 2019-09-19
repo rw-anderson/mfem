@@ -1092,19 +1092,19 @@ MFEM_SYNC_THREAD; \
 MFEM_JIT
 template<int T_D1D = 0, int T_Q1D = 0>
 void BP3Global_v0(const int NE,
-                  const Array<double> &b_,
-                  const Array<double> &g_,
-                  const Vector &d_,
-                  const Vector &x_,
-                  Vector &y_,
+                  const Array<double> &_b,
+                  const Array<double> &_cog,
+                  const Vector &_d,
+                  const Vector &_x,
+                  Vector &_y,
                   const int d1d = 0,
                   const int q1d = 0)
 {
 
-   const int D1D = T_D1D ? T_D1D : 1;
-   const int Q1D = T_Q1D ? T_Q1D : 1;
-   constexpr int MQ1 = T_Q1D ? T_Q1D : 1;
-   constexpr int MD1 = T_D1D ? T_D1D : 1;
+   const int D1D = T_D1D ? T_D1D : d1d;
+   const int Q1D = T_Q1D ? T_Q1D : q1d;
+   constexpr int MD1 = T_D1D ? T_D1D : MAX_D1D;
+   constexpr int MQ1 = T_Q1D ? T_Q1D : MAX_Q1D;
    MFEM_VERIFY(D1D <= MD1, "");
    MFEM_VERIFY(Q1D <= MQ1, "");
 
@@ -1114,42 +1114,42 @@ void BP3Global_v0(const int NE,
    auto x = Reshape(x_.Read(), D1D, D1D, D1D, NE);
    auto y = Reshape(y_.ReadWrite(), D1D, D1D, D1D, NE);
 
-   MFEM_FORALL_3D(e, NE, Q1D, Q1D, 1,
+   MFEM_FORALL_2D(e, NE, Q1D, Q1D, 1,
    {
-      const int D1D = T_D1D ? T_D1D : 1;
-      const int Q1D = T_Q1D ? T_Q1D : 1;
+      const int D1D = T_D1D ? T_D1D : d1d;
+      const int Q1D = T_Q1D ? T_Q1D : q1d;
+      constexpr int MQ1 = T_Q1D ? T_Q1D : MAX_Q1D;
+      constexpr int MD1 = T_D1D ? T_D1D : MAX_D1D;
 
-      MFEM_SHARED double s_Iq[Q1D][Q1D][Q1D];
-      MFEM_SHARED double s_D[Q1D][Q1D];
-      MFEM_SHARED double s_I[Q1D][D1D];
-      MFEM_SHARED double s_Gqr[Q1D][Q1D];
-      MFEM_SHARED double s_Gqs[Q1D][Q1D];
+      MFEM_SHARED double s_Iq[MQ1][MQ1][MQ1];
+      MFEM_SHARED double s_D[MQ1][MQ1];
+      MFEM_SHARED double s_I[MQ1][MD1];
+      MFEM_SHARED double s_Gqr[MQ1][MQ1];
+      MFEM_SHARED double s_Gqs[MQ1][MQ1];
 
-      double MFEM_EXCLUSIVE(r_qt);
-      double MFEM_EXCLUSIVE(r_q)[Q1D];
-      double MFEM_EXCLUSIVE(r_Aq)[Q1D];
+      double MFEM_REGISTER_2D(r_qt,MQ1,MQ1);
+      double MFEM_REGISTER_2D(r_q,MQ1,MQ1)[MQ1];
+      double MFEM_REGISTER_2D(r_Aq,MQ1,MQ1)[MQ1];
 
       MFEM_FOREACH_THREAD(j,y,Q1D)
       {
          MFEM_FOREACH_THREAD(i,x,Q1D)
          {
             s_D[j][i] = g(i,j);
-            if (i<D1D) { s_I[j][i] = b(j,i); }
+            if (i<D1D)
+            {
+               s_I[j][i] = b(j,i);
+            }
             if (i<D1D && j<D1D)
             {
                for (int k = 0; k < D1D; k++)
                {
-                  //const int id = E*D3D + k*D1D*D1D + j*D1D + i;
-                  //int localId = localizedIds[id]-1;
-                  //r_q[k] = q[id];
-                  MFEM_EXCLUSIVE_GET(r_q)[k] = x(i,j,k,e);
+                  MFEM_REGISTER_2D(r_q,j,i)[k] = x(i,j,k,e);
                }
             }
-            MFEM_EXCLUSIVE_INC;
          }
       }
       MFEM_SYNC_THREAD;
-
       MFEM_FOREACH_THREAD(b,y,Q1D)
       {
          MFEM_FOREACH_THREAD(a,x,Q1D)
@@ -1161,16 +1161,15 @@ void BP3Global_v0(const int NE,
                   double res = 0;
                   for (int c=0; c<D1D; ++c)
                   {
-                     res += s_I[k][c]*MFEM_EXCLUSIVE_GET(r_q)[c];
+                     res += s_I[k][c]*MFEM_REGISTER_2D(r_q,b,a)[c];
                   }
                   s_Iq[k][b][a] = res;
                }
             }
-            MFEM_EXCLUSIVE_INC;
+
          }
       }
       MFEM_SYNC_THREAD;
-
       MFEM_FOREACH_THREAD(k,y,Q1D)
       {
          MFEM_FOREACH_THREAD(a,x,Q1D)
@@ -1179,69 +1178,53 @@ void BP3Global_v0(const int NE,
             {
                for (int b=0; b<D1D; ++b)
                {
-                  MFEM_EXCLUSIVE_GET(r_Aq)[b] = s_Iq[k][b][a];
+                  MFEM_REGISTER_2D(r_Aq,k,a)[b] = s_Iq[k][b][a];
                }
                for (int j=0; j<Q1D; ++j)
                {
                   double res = 0;
                   for (int b=0; b<D1D; ++b)
                   {
-                     res += s_I[j][b]*MFEM_EXCLUSIVE_GET(r_Aq)[b];
+                     res += s_I[j][b]*MFEM_REGISTER_2D(r_Aq,k,a)[b];
                   }
                   s_Iq[k][j][a] = res;
                }
             }
-            MFEM_EXCLUSIVE_INC;
          }
       }
       MFEM_SYNC_THREAD;
-
       MFEM_FOREACH_THREAD(k,y,Q1D)
       {
          MFEM_FOREACH_THREAD(j,x,Q1D)
          {
             for (int a=0; a<D1D; ++a)
             {
-               MFEM_EXCLUSIVE_GET(r_Aq)[a] = s_Iq[k][j][a];
+               MFEM_REGISTER_2D(r_Aq,k,j)[a] = s_Iq[k][j][a];
             }
             for (int i=0; i<Q1D; ++i)
             {
                double res = 0;
                for (int a=0; a<D1D; ++a)
                {
-                  res += s_I[i][a]*MFEM_EXCLUSIVE_GET(r_Aq)[a];
+                  res += s_I[i][a]*MFEM_REGISTER_2D(r_Aq,k,j)[a];
                }
                s_Iq[k][j][i] = res;
             }
-            MFEM_EXCLUSIVE_INC;
          }
       }
       MFEM_SYNC_THREAD;
-
-
       MFEM_FOREACH_THREAD(j,y,Q1D)
       {
          MFEM_FOREACH_THREAD(i,x,Q1D)
          {
             for (int k = 0; k < Q1D; k++)
             {
-               MFEM_EXCLUSIVE_GET(r_Aq)[k] = 0.0;
+               MFEM_REGISTER_2D(r_Aq,j,i)[k] = 0.0;
             }
-            MFEM_EXCLUSIVE_INC;
          }
       }
       MFEM_SYNC_THREAD;
-
-      // Layer by layer
-      /*
-            for_Q(0);
-            for_Q(1);
-            for_Q(2);
-            for_Q(3);
-            for_Q(4);
-            for_Q(5);
-                       */
-      _Pragma("unroll Q1D")
+      _Pragma("unroll MQ1")
       for (int k = 0; k < Q1D; k++)
       {
          MFEM_SYNC_THREAD;
@@ -1249,10 +1232,9 @@ void BP3Global_v0(const int NE,
          {
             MFEM_FOREACH_THREAD(i,x,Q1D)
             {
-               // share u(:,:,k)
                double qr = 0.0, qs = 0.0;
-               MFEM_EXCLUSIVE_GET(r_qt) = 0.0;
-               _Pragma("unroll Q1D")
+               MFEM_REGISTER_2D(r_qt,j,i) = 0.0;
+               _Pragma("unroll MQ1")
                for (int m = 0; m < Q1D; m++)
                {
                   double Dim = s_D[i][m];
@@ -1260,9 +1242,9 @@ void BP3Global_v0(const int NE,
                   double Dkm = s_D[k][m];
                   qr += Dim*s_Iq[k][j][m];
                   qs += Djm*s_Iq[k][m][i];
-                  MFEM_EXCLUSIVE_GET(r_qt) += Dkm*s_Iq[m][j][i];
+                  MFEM_REGISTER_2D(r_qt,j,i) += Dkm*s_Iq[m][j][i];
                }
-               const double qt = MFEM_EXCLUSIVE_GET(r_qt);
+               const double qt = MFEM_REGISTER_2D(r_qt,j,i);
                const int q = i + ((j*Q1D) + (k*Q1D*Q1D));
                const double G00 = d(q,0,e);
                const double G01 = d(q,1,e);
@@ -1272,18 +1254,16 @@ void BP3Global_v0(const int NE,
                const double G22 = d(q,5,e);
                s_Gqr[j][i] = (G00*qr + G01*qs + G02*qt);
                s_Gqs[j][i] = (G01*qr + G11*qs + G12*qt);
-               MFEM_EXCLUSIVE_GET(r_qt) = G02*qr + G12*qs + G22*qt;
-               MFEM_EXCLUSIVE_INC;
+               MFEM_REGISTER_2D(r_qt,j,i) = G02*qr + G12*qs + G22*qt;
             }
          }
          MFEM_SYNC_THREAD;
-
          MFEM_FOREACH_THREAD(j,y,Q1D)
          {
             MFEM_FOREACH_THREAD(i,x,Q1D)
             {
                double Aqtmp = 0;
-               _Pragma("unroll Q1D")
+               _Pragma("unroll MQ1")
                for (int m = 0; m < Q1D; m++)
                {
                   double Dmi = s_D[m][i];
@@ -1291,15 +1271,13 @@ void BP3Global_v0(const int NE,
                   double Dkm = s_D[k][m];
                   Aqtmp += Dmi*s_Gqr[j][m];
                   Aqtmp += Dmj*s_Gqs[m][i];
-                  MFEM_EXCLUSIVE_GET(r_Aq)[m] += Dkm*MFEM_EXCLUSIVE_GET(r_qt);
+                  MFEM_REGISTER_2D(r_Aq,j,i)[m] += Dkm*MFEM_REGISTER_2D(r_qt,j,i);
                }
-               MFEM_EXCLUSIVE_GET(r_Aq)[k] += Aqtmp;
-               MFEM_EXCLUSIVE_INC;
+               MFEM_REGISTER_2D(r_Aq,j,i)[k] += Aqtmp;
             }
          }
          MFEM_SYNC_THREAD;
       }
-
       MFEM_FOREACH_THREAD(j,y,Q1D)
       {
          MFEM_FOREACH_THREAD(i,x,Q1D)
@@ -1309,15 +1287,13 @@ void BP3Global_v0(const int NE,
                double res = 0;
                for (int k=0; k<Q1D; ++k)
                {
-                  res += s_I[k][c]*MFEM_EXCLUSIVE_GET(r_Aq)[k];
+                  res += s_I[k][c]*MFEM_REGISTER_2D(r_Aq,j,i)[k];
                }
                s_Iq[c][j][i] = res;
             }
-            MFEM_EXCLUSIVE_INC;
          }
       }
       MFEM_SYNC_THREAD;
-
       MFEM_FOREACH_THREAD(c,y,Q1D)
       {
          MFEM_FOREACH_THREAD(i,x,Q1D)
@@ -1326,24 +1302,22 @@ void BP3Global_v0(const int NE,
             {
                for (int j=0; j<Q1D; ++j)
                {
-                  MFEM_EXCLUSIVE_GET(r_Aq)[j] = s_Iq[c][j][i];
+                  MFEM_REGISTER_2D(r_Aq,c,i)[j] = s_Iq[c][j][i];
                }
                for (int b=0; b<D1D; ++b)
                {
                   double res = 0;
                   for (int j=0; j<Q1D; ++j)
                   {
-                     res += s_I[j][b]*MFEM_EXCLUSIVE_GET(r_Aq)[j];
+                     res += s_I[j][b]*MFEM_REGISTER_2D(r_Aq,c,i)[j];
                   }
-
                   s_Iq[c][b][i] = res;
                }
             }
-            MFEM_EXCLUSIVE_INC;
+
          }
       }
       MFEM_SYNC_THREAD;
-
       MFEM_FOREACH_THREAD(c,y,Q1D)
       {
          MFEM_FOREACH_THREAD(b,x,Q1D)
@@ -1352,37 +1326,31 @@ void BP3Global_v0(const int NE,
             {
                for (int i=0; i<Q1D; ++i)
                {
-                  MFEM_EXCLUSIVE_GET(r_Aq)[i] = s_Iq[c][b][i];
+                  MFEM_REGISTER_2D(r_Aq,c,b)[i] = s_Iq[c][b][i];
                }
                for (int a=0; a<D1D; ++a)
                {
                   double res = 0;
                   for (int i=0; i<Q1D; ++i)
                   {
-                     res += s_I[i][a]*MFEM_EXCLUSIVE_GET(r_Aq)[i];
+                     res += s_I[i][a]*MFEM_REGISTER_2D(r_Aq,c,b)[i];
                   }
                   s_Iq[c][b][a] = res;
                }
             }
-            MFEM_EXCLUSIVE_INC;
          }
       }
       MFEM_SYNC_THREAD;
-
       MFEM_FOREACH_THREAD(j,y,Q1D)
       {
          MFEM_FOREACH_THREAD(i,x,Q1D)
          {
             if (i<D1D && j<D1D)
             {
-               _Pragma("unroll D1D")
+               _Pragma("unroll MD1")
                for (int k = 0; k < D1D; k++)
                {
-                  //const int id = element*D3D +k*D1D*D1D+ j*D1D + i;
-                  //int localId = localizedIds[id]-1;
-                  double res = s_Iq[k][j][i];
-                  //atomicAdd(Aq+localId, res); // atomic assumes Aq zerod
-                  y(i,j,k,e) = res;
+                  y(i,j,k,e) = s_Iq[k][j][i];
                }
             }
          }
@@ -1407,18 +1375,15 @@ static int CeedHouseholderReflect(double *A, const double *v,
 
 //******************************************************************************
 static int CeedHouseholderApplyQ(double *A, const double *Q,
-                                 const double *tau, bool tmode,
+                                 const double *tau,
                                  int m, int n, int k,
                                  int row, int col)
 {
    double v[m];
    for (int ii=0; ii<k; ii++)
    {
-      int i = tmode ? ii : k-1-ii;
-      for (int j=i+1; j<m; j++)
-      {
-         v[j] = Q[j*k+i];
-      }
+      const int i = k-1-ii;
+      for (int j=i+1; j<m; j++) { v[j] = Q[j*k+i]; }
       // Apply Householder reflector (I - tau v v^T) coG^T
       CeedHouseholderReflect(&A[i*row], &v[i], tau[i], m-i, n, row, col);
    }
@@ -1430,11 +1395,7 @@ static int CeedQRFactorization(double *mat, double *tau, int m, int n)
 {
    double v[m];
    // Check m >= n
-   if (n > m)
-   {
-      MFEM_VERIFY(false,"");
-   }
-
+   if (n > m) { MFEM_VERIFY(false,""); }
    for (int i=0; i<n; i++)
    {
       // Calculate Householder vector, magnitude
@@ -1473,7 +1434,6 @@ static int CeedBasisGetCollocatedGrad(const int P1d,
                                       const Array<double> &G,
                                       Array<double> &colograd1d)
 {
-   int i, j, k;
    double tau[Q1d];
    Array<double> interp1d(Q1d*P1d);
    Array<double> grad1d(Q1d*P1d);
@@ -1489,25 +1449,25 @@ static int CeedBasisGetCollocatedGrad(const int P1d,
    }
    CeedQRFactorization(interp1d, tau, Q1d, P1d);
    // Apply Rinv, colograd1d = grad1d Rinv
-   for (i=0; i<Q1d; i++)   // Row   i
+   for (int i=0; i<Q1d; i++)
    {
       colograd1d[Q1d*i] = grad1d[P1d*i]/interp1d[0];
-      for (j=1; j<P1d; j++)   // Column j
+      for (int j=1; j<P1d; j++)
       {
          colograd1d[j+Q1d*i] = grad1d[j+P1d*i];
-         for (k=0; k<j; k++)
+         for (int k=0; k<j; k++)
          {
             colograd1d[j+Q1d*i] -= interp1d[j+P1d*k]*colograd1d[k+Q1d*i];
          }
          colograd1d[j+Q1d*i] /= interp1d[j+P1d*j];
       }
-      for (j=P1d; j<Q1d; j++)
+      for (int j=P1d; j<Q1d; j++)
       {
          colograd1d[j+Q1d*i] = 0;
       }
    }
    // Apply Qtranspose, colograd = colograd Qtranspose
-   CeedHouseholderApplyQ(colograd1d, interp1d, tau, false, Q1d, Q1d, P1d, 1, Q1d);
+   CeedHouseholderApplyQ(colograd1d, interp1d, tau, Q1d, Q1d, P1d, 1, Q1d);
    return 0;
 }
 
@@ -1539,7 +1499,6 @@ static void PADiffusionApply(const int dim,
       MFEM_ABORT("OCCA PADiffusionApply unknown kernel!");
    }
 #endif // MFEM_USE_OCCA
-
 #ifndef MFEM_USE_JIT
    static bool BP3Global = getenv("LBP");
    if (BP3Global)
@@ -1558,12 +1517,20 @@ static void PADiffusionApply(const int dim,
             case 0x67: return BP3Global_v0<6,7>(NE,B,coG,op,x,y);
             case 0x78: return BP3Global_v0<7,8>(NE,B,coG,op,x,y);
             case 0x89: return BP3Global_v0<8,9>(NE,B,coG,op,x,y);
+            case 0x9A: return BP3Global_v0<9,10>(NE,B,coG,op,x,y);
+            case 0xAB: return BP3Global_v0<10,11>(NE,B,coG,op,x,y);
+            case 0xBC: return BP3Global_v0<11,12>(NE,B,coG,op,x,y);
+            case 0xCD: return BP3Global_v0<12,13>(NE,B,coG,op,x,y);
+            case 0xDE: return BP3Global_v0<13,14>(NE,B,coG,op,x,y);
             case 0xEF: return BP3Global_v0<14,15>(NE,B,coG,op,x,y);
-               // default:   return PADiffusionApply3D(NE,B,G,Bt,Gt,op,x,y,D1D,Q1D);
+            case 0xF0: return BP3Global_v0<15,16>(NE,B,coG,op,x,y);  // 14
+            case 0x111: return BP3Global_v0<16,17>(NE,B,coG,op,x,y); // 15
+            // kernels below use too much shared memory
+            //case 0x112: return BP3Global_v0<17,18>(NE,B,coG,op,x,y);
+            default:   return BP3Global_v0(NE,B,coG,op,x,y,D1D,Q1D);
          }
       }
    }
-   else
    {
       if (dim == 3)
       {
@@ -1576,7 +1543,9 @@ static void PADiffusionApply(const int dim,
             case 0x67: return SmemPADiffusionApply3D<6,7>(NE,B,G,op,x,y);
             case 0x78: return SmemPADiffusionApply3D<7,8>(NE,B,G,op,x,y);
             case 0x89: return SmemPADiffusionApply3D<8,9>(NE,B,G,op,x,y);
-               // default:   return PADiffusionApply3D(NE,B,G,Bt,Gt,op,x,y,D1D,Q1D);
+            // kernels below use too much shared memory
+            //case 0x9A: return SmemPADiffusionApply3D<9,10>(NE,B,G,op,x,y);
+            default:   return PADiffusionApply3D(NE,B,G,Bt,Gt,op,x,y,D1D,Q1D);
          }
       }
    }
@@ -1597,6 +1566,27 @@ static void PADiffusionApply(const int dim,
       if (dim == 3)
       {
          return SmemPADiffusionApply3D(NE,B,G,op,x,y,D1D,Q1D);
+=======
+   else if (dim == 3)
+   {
+      const int DQ = (D1D << 4 ) | Q1D;
+      //printf("\n\033[33m[Diff] D1D= %d, Q1D= %d => %x\033[m", D1D, Q1D, DQ);
+      static bool BP3Global = getenv("LBP");
+      if (BP3Global)
+      {
+         Array<double> coG(Q1D*Q1D);
+         coG.GetMemory().UseDevice(true);
+         CeedBasisGetCollocatedGrad(D1D, Q1D, B, G, coG);
+         switch (DQ)
+         {
+         }
+      }
+      else
+      {
+         switch (DQ)
+         {
+         }
+>>>>>>> okina-exclusive
       }
    }
 #endif // MFEM_USE_JIT

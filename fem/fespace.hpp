@@ -923,8 +923,8 @@ public:
    static const int MAX_ND2D = 1000;
    static const int MAX_VDIM2D = 2;
 
-   static const int MAX_NQ3D = 240000;
-   static const int MAX_ND3D = 30000;
+   static const int MAX_NQ3D = 10000;
+   static const int MAX_ND3D = 10000;
    static const int MAX_VDIM3D = 3;
 
 public:
