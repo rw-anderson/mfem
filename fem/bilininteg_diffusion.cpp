@@ -1540,7 +1540,7 @@ static void PADiffusionApply(const int dim,
    }
 #endif // MFEM_USE_OCCA
 
-#ifdef MFEM_USE_JIT
+#ifndef MFEM_USE_JIT
    static bool BP3Global = getenv("LBP");
    if (BP3Global)
    {
@@ -1578,6 +1578,25 @@ static void PADiffusionApply(const int dim,
             case 0x89: return SmemPADiffusionApply3D<8,9>(NE,B,G,op,x,y);
                // default:   return PADiffusionApply3D(NE,B,G,Bt,Gt,op,x,y,D1D,Q1D);
          }
+      }
+   }
+#else // MFEM_USE_JIT
+   static bool BP3Global = getenv("LBP");
+   if (BP3Global)
+   {
+      Array<double> coG(Q1D*Q1D);
+      coG.GetMemory().UseDevice(true);
+      CeedBasisGetCollocatedGrad(D1D, Q1D, B, G, coG);
+      if (dim == 3)
+      {
+         return BP3Global_v0(NE,B,coG,op,x,y,D1D,Q1D);
+      }
+   }
+   else
+   {
+      if (dim == 3)
+      {
+         return SmemPADiffusionApply3D(NE,B,G,op,x,y,D1D,Q1D);
       }
    }
 #endif // MFEM_USE_JIT
