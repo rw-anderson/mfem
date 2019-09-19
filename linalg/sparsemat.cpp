@@ -35,7 +35,8 @@ SparseMatrix::SparseMatrix(int nrows, int ncols)
      ColPtrJ(NULL),
      ColPtrNode(NULL),
      At(NULL),
-     isSorted(false)
+     isSorted(false),
+     use_dev(true)
 {
    // We probably do not need to set the ownership flags here.
    I.Reset(); I.SetHostPtrOwner(true);
@@ -58,7 +59,8 @@ SparseMatrix::SparseMatrix(int *i, int *j, double *data, int m, int n)
      ColPtrJ(NULL),
      ColPtrNode(NULL),
      At(NULL),
-     isSorted(false)
+     isSorted(false),
+     use_dev(true)
 {
    I.Wrap(i, height+1, true);
    J.Wrap(j, I[height], true);
@@ -76,7 +78,8 @@ SparseMatrix::SparseMatrix(int *i, int *j, double *data, int m, int n,
      ColPtrJ(NULL),
      ColPtrNode(NULL),
      At(NULL),
-     isSorted(issorted)
+     isSorted(issorted),
+     use_dev(true)
 {
    I.Wrap(i, height+1, ownij);
    J.Wrap(j, I[height], ownij);
@@ -98,12 +101,13 @@ SparseMatrix::SparseMatrix(int *i, int *j, double *data, int m, int n,
 }
 
 SparseMatrix::SparseMatrix(int nrows, int ncols, int rowsize)
-   : AbstractSparseMatrix(nrows, ncols)
-   , Rows(NULL)
-   , ColPtrJ(NULL)
-   , ColPtrNode(NULL)
-   , At(NULL)
-   , isSorted(false)
+   : AbstractSparseMatrix(nrows, ncols),
+     Rows(NULL),
+     ColPtrJ(NULL),
+     ColPtrNode(NULL),
+     At(NULL),
+     isSorted(false),
+     use_dev(true)
 {
 #ifdef MFEM_USE_MEMALLOC
    NodesMem = NULL;
@@ -181,15 +185,17 @@ SparseMatrix::SparseMatrix(const SparseMatrix &mat, bool copy_graph)
    ColPtrNode = NULL;
    At = NULL;
    isSorted = mat.isSorted;
+   use_dev = mat.UseDevice();
 }
 
 SparseMatrix::SparseMatrix(const Vector &v)
-   : AbstractSparseMatrix(v.Size(), v.Size())
-   , Rows(NULL)
-   , ColPtrJ(NULL)
-   , ColPtrNode(NULL)
-   , At(NULL)
-   , isSorted(true)
+   : AbstractSparseMatrix(v.Size(), v.Size()),
+     Rows(NULL),
+     ColPtrJ(NULL),
+     ColPtrNode(NULL),
+     At(NULL),
+     isSorted(true),
+     use_dev(true)
 {
 #ifdef MFEM_USE_MEMALLOC
    NodesMem = NULL;
@@ -230,6 +236,7 @@ void SparseMatrix::MakeRef(const SparseMatrix &master)
    J = master.J; J.ClearOwnerFlags();
    A = master.A; A.ClearOwnerFlags();
    isSorted = master.isSorted;
+   use_dev = master.UseDevice();
 }
 
 void SparseMatrix::SetEmpty()
@@ -544,7 +551,7 @@ void SparseMatrix::ToDenseMatrix(DenseMatrix & B) const
 
 void SparseMatrix::Mult(const Vector &x, Vector &y) const
 {
-   if (Finalized()) { y.UseDevice(true); }
+   if (Finalized()) { y.UseDevice(UseDevice()); }
    y = 0.0;
    AddMult(x, y);
 }
@@ -579,12 +586,12 @@ void SparseMatrix::AddMult(const Vector &x, Vector &y, const double a) const
 #ifndef MFEM_USE_LEGACY_OPENMP
    const int height = this->height;
    const int nnz = J.Capacity();
-   auto d_I = Read(I, height+1);
-   auto d_J = Read(J, nnz);
-   auto d_A = Read(A, nnz);
-   auto d_x = x.Read();
-   auto d_y = y.ReadWrite();
-   MFEM_FORALL(i, height,
+   auto d_I = Read(I, height+1, UseDevice());
+   auto d_J = Read(J, nnz, UseDevice());
+   auto d_A = Read(A, nnz, UseDevice());
+   auto d_x = x.Read(UseDevice());
+   auto d_y = y.ReadWrite(UseDevice());
+   MFEM_FORALL_SWITCH(UseDevice(), i, height,
    {
       double d = 0.0;
       const int end = d_I[i+1];
@@ -615,7 +622,7 @@ void SparseMatrix::AddMult(const Vector &x, Vector &y, const double a) const
 
 void SparseMatrix::MultTranspose(const Vector &x, Vector &y) const
 {
-   if (Finalized()) { y.UseDevice(true); }
+   if (Finalized()) { y.UseDevice(UseDevice()); }
    y = 0.0;
    AddMultTranspose(x, y);
 }
@@ -686,13 +693,13 @@ void SparseMatrix::PartMult(
 
    const int n = rows.Size();
    const int nnz = J.Capacity();
-   auto d_rows = rows.Read();
-   auto d_I = Read(I, height+1);
-   auto d_J = Read(J, nnz);
-   auto d_A = Read(A, nnz);
-   auto d_x = x.Read();
-   auto d_y = y.Write();
-   MFEM_FORALL(i, n,
+   auto d_rows = rows.Read(UseDevice());
+   auto d_I = Read(I, height+1, UseDevice());
+   auto d_J = Read(J, nnz, UseDevice());
+   auto d_A = Read(A, nnz, UseDevice());
+   auto d_x = x.Read(UseDevice());
+   auto d_y = y.Write(UseDevice());
+   MFEM_FORALL_SWITCH(UseDevice(), i, n,
    {
       const int r = d_rows[i];
       const int end = d_I[r + 1];
@@ -729,15 +736,15 @@ void SparseMatrix::BooleanMult(const Array<int> &x, Array<int> &y) const
    MFEM_ASSERT(x.Size() == Width(), "Input vector size (" << x.Size()
                << ") must match matrix width (" << Width() << ")");
 
-   y.SetSize(Height(), Device::GetMemoryType());
+   y.SetSize(Height(), UseDevice() ? Device::GetMemoryType() : MemoryType::HOST );
 
    const int height = Height();
    const int nnz = J.Capacity();
-   auto d_I = Read(I, height+1);
-   auto d_J = Read(J, nnz);
-   auto d_x = Read(x.GetMemory(), x.Size());
-   auto d_y = Write(y.GetMemory(), y.Size());
-   MFEM_FORALL(i, height,
+   auto d_I = Read(I, height+1, UseDevice());
+   auto d_J = Read(J, nnz, UseDevice());
+   auto d_x = Read(x.GetMemory(), x.Size(), UseDevice());
+   auto d_y = Write(y.GetMemory(), y.Size(), UseDevice());
+   MFEM_FORALL_SWITCH(UseDevice(), i, height,
    {
       bool d_yi = false;
       const int end = d_I[i+1];
@@ -1020,6 +1027,7 @@ void SparseMatrix::GetBlocks(Array2D<SparseMatrix *> &blocks) const
             bI[k] = 0;
          }
          blocks(i,j) = new SparseMatrix(bI, NULL, NULL, nr, nc);
+         blocks(i,j)->UseDevice(UseDevice());
       }
    }
 
@@ -1386,6 +1394,41 @@ void SparseMatrix::EliminateCols(const Array<int> &cols, const Vector *x,
       }
    }
 }
+
+void SparseMatrix::EliminateCols(const Array<int> &col_marker, SparseMatrix &Ae)
+{
+   if (Rows)
+   {
+      RowNode *nd;
+      for (int row = 0; row < height; row++)
+      {
+         for (nd = Rows[row]; nd != NULL; nd = nd->Prev)
+         {
+            if (col_marker[nd->Column])
+            {
+               Ae.Add(row, nd->Column, nd->Value);
+               nd->Value = 0.0;
+            }
+         }
+      }
+   }
+   else
+   {
+      for (int row = 0; row < height; row++)
+      {
+         for (int j = I[row]; j < I[row+1]; j++)
+         {
+            if (col_marker[J[j]])
+            {
+               Ae.Add(row, J[j], A[j]);
+               A[j] = 0.0;
+            }
+         }
+      }
+   }
+   Ae.UseDevice(UseDevice());
+}
+
 
 void SparseMatrix::EliminateRowCol(int rc, const double sol, Vector &rhs,
                                    DiagonalPolicy dpolicy)
@@ -1841,6 +1884,7 @@ void SparseMatrix::EliminateRowCol(int rc, SparseMatrix &Ae,
          }
       }
    }
+   Ae.UseDevice(UseDevice());
 }
 
 void SparseMatrix::SetDiagIdentity()
@@ -2991,7 +3035,9 @@ SparseMatrix *Transpose (const SparseMatrix &A)
    }
    At_i[0] = 0;
 
-   return  new SparseMatrix(At_i, At_j, At_data, n, m);
+   SparseMatrix * At = new SparseMatrix(At_i, At_j, At_data, n, m);
+   At->UseDevice(A.UseDevice());
+   return At;
 }
 
 SparseMatrix *TransposeAbstractSparseMatrix (const AbstractSparseMatrix &A,
@@ -3195,7 +3241,7 @@ SparseMatrix *Mult (const SparseMatrix &A, const SparseMatrix &B,
       << counter);
 
    delete [] B_marker;
-
+   C->UseDevice( A.UseDevice() || B.UseDevice() );
    return C;
 }
 
@@ -3461,7 +3507,9 @@ SparseMatrix * Add(double a, const SparseMatrix & A, double b,
    }
 
    delete[] marker;
-   return new SparseMatrix(C_i, C_j, C_data, nrows, ncols);
+   SparseMatrix * C = new SparseMatrix(C_i, C_j, C_data, nrows, ncols);
+   C->UseDevice( A.UseDevice() || B.UseDevice() );
+   return C;
 }
 
 SparseMatrix * Add(const SparseMatrix & A, const SparseMatrix & B)
@@ -3475,6 +3523,7 @@ SparseMatrix * Add(Array<SparseMatrix *> & Ai)
 
    SparseMatrix * accumulate = Ai[0];
    SparseMatrix * result = accumulate;
+   bool use_dev = false;
 
    for (int i=1; i < Ai.Size(); ++i)
    {
@@ -3485,8 +3534,9 @@ SparseMatrix * Add(Array<SparseMatrix *> & Ai)
       }
 
       accumulate = result;
+      use_dev = ( use_dev || Ai[i]->UseDevice() );
    }
-
+   result->UseDevice(use_dev);
    return result;
 }
 
@@ -3548,7 +3598,7 @@ SparseMatrix *OuterProduct(const DenseMatrix &A, const SparseMatrix &B)
       }
    }
    C->Finalize();
-
+   C->UseDevice(B.UseDevice());
    return C;
 }
 
@@ -3577,7 +3627,7 @@ SparseMatrix *OuterProduct(const SparseMatrix &A, const DenseMatrix &B)
       }
    }
    C->Finalize();
-
+   C->UseDevice(A.UseDevice());
    return C;
 }
 
@@ -3610,7 +3660,7 @@ SparseMatrix *OuterProduct(const SparseMatrix &A, const SparseMatrix &B)
       }
    }
    C->Finalize();
-
+   C->UseDevice( A.UseDevice() || B.UseDevice() );
    return C;
 }
 
@@ -3632,6 +3682,7 @@ void SparseMatrix::Swap(SparseMatrix &other)
 #endif
 
    mfem::Swap(isSorted, other.isSorted);
+   mfem::Swap(use_dev, other.use_dev);
 }
 
 }

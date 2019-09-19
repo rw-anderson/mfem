@@ -13,6 +13,7 @@
 #define MFEM_FORALL_HPP
 
 #include "../config/config.hpp"
+#include "dbg.hpp"
 #include "error.hpp"
 #include "cuda.hpp"
 #include "hip.hpp"
@@ -37,9 +38,10 @@ namespace mfem
 #define MFEM_TEMPLATE
 #define MFEM_RANGE(...)
 
+// TODO:WP:this is temporary
 // Maximum size of dofs and quads in 1D.
-const int MAX_D1D = 16;
-const int MAX_Q1D = 16;
+const int MAX_D1D = 30;
+const int MAX_Q1D = 60;
 
 // Implementation of MFEM's "parallel for" (forall) device/host kernel
 // interfaces supporting RAJA, CUDA, OpenMP, and sequential backends.

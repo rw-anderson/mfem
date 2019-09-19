@@ -425,7 +425,7 @@ MFEM_BUILD_FLAGS = $(MFEM_PICFLAG) $(MFEM_CPPFLAGS) $(MFEM_CXXFLAGS)\
 ifeq ($(MFEM_USE_JIT),YES)
 MPP_LANG = $(if $(MFEM_USE_CUDA:YES=),-x c++)
 $(OBJECT_FILES): $(BLD)%.o: $(SRC)%.cpp $(CONFIG_MK) mpp
-	./mpp $(<) | $(MFEM_CXX) $(MPP_LANG) $(strip $(MFEM_BUILD_FLAGS)) -I. -I$(patsubst %/,%,$(<D)) -c -o $(@) -
+	./mpp $(<) | $(MFEM_CXX) $(MPP_LANG) $(strip $(MFEM_BUILD_FLAGS)) -I$(if $(SRC),$(SRC),.) -I$(patsubst %/,%,$(<D)) -c -o $(@) -
 else
 $(OBJECT_FILES): $(BLD)%.o: $(SRC)%.cpp $(CONFIG_MK)
 	$(MFEM_CXX) $(MFEM_BUILD_FLAGS) -c $(<) -o $(@)
@@ -435,7 +435,7 @@ endif
 MPP_MFEM_CONFIG  = -DMFEM_CXX="$(MFEM_CXX)"
 MPP_MFEM_CONFIG += -DMFEM_INSTALL_DIR="$(MFEM_INSTALL_DIR)"
 MPP_MFEM_CONFIG += -DMFEM_BUILD_FLAGS="$(strip $(MFEM_BUILD_FLAGS))"
-mpp: $(BLD)general/mpp.cpp $(BLD)general/jit.hpp $(THIS_MK)
+mpp: $(SRC)general/mpp.cpp $(SRC)general/jit.hpp $(THIS_MK)
 	$(MFEM_CXX) -O3 -std=c++11 -o $(BLD)$(@) $(<) $(MPP_MFEM_CONFIG)
 
 all: examples miniapps $(TEST_DIRS)

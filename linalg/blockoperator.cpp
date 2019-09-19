@@ -69,18 +69,26 @@ void BlockOperator::Mult (const Vector & x, Vector & y) const
 {
    MFEM_ASSERT(x.Size() == width, "incorrect input Vector size");
    MFEM_ASSERT(y.Size() == height, "incorrect output Vector size");
-
-   yblock.Update(y.GetData(),row_offsets);
-   xblock.Update(x.GetData(),col_offsets);
+   
+   const bool use_dev = x.UseDevice() || y.UseDevice();
+   yblock.Update(y,row_offsets);
+   yblock.UseDevice(use_dev);
+   yblock.ReadWrite(use_dev);
+   xblock.Update(x,col_offsets);
+   xblock.UseDevice(use_dev);
+   xblock.Read(use_dev);
+   tmp.UseDevice(use_dev);
 
    y = 0.0;
    for (int iRow=0; iRow < nRowBlocks; ++iRow)
    {
+      yblock.GetBlock(iRow).SyncAliasMemory(yblock);
       tmp.SetSize(row_offsets[iRow+1] - row_offsets[iRow]);
       for (int jCol=0; jCol < nColBlocks; ++jCol)
       {
          if (op(iRow,jCol))
          {
+            xblock.GetBlock(jCol).SyncAliasMemory(xblock); // TODO: This shouldn't have to be done...
             op(iRow,jCol)->Mult(xblock.GetBlock(jCol), tmp);
             yblock.GetBlock(iRow).Add(coef(iRow,jCol), tmp);
          }
@@ -96,16 +104,24 @@ void BlockOperator::MultTranspose (const Vector & x, Vector & y) const
 
    y = 0.0;
 
-   xblock.Update(x.GetData(),row_offsets);
-   yblock.Update(y.GetData(),col_offsets);
+   const bool use_dev = x.UseDevice() || y.UseDevice();
+   xblock.Update(x,row_offsets);
+   xblock.UseDevice(use_dev);
+   xblock.Read(use_dev);
+   yblock.Update(y,col_offsets);
+   yblock.UseDevice(use_dev);
+   yblock.ReadWrite(use_dev);
+   tmp.UseDevice(use_dev);
 
    for (int iRow=0; iRow < nColBlocks; ++iRow)
    {
+      yblock.GetBlock(iRow).SyncAliasMemory(yblock);
       tmp.SetSize(col_offsets[iRow+1] - col_offsets[iRow]);
       for (int jCol=0; jCol < nRowBlocks; ++jCol)
       {
          if (op(jCol,iRow))
          {
+            xblock.GetBlock(jCol).SyncAliasMemory(xblock);
             op(jCol,iRow)->MultTranspose(xblock.GetBlock(jCol), tmp);
             yblock.GetBlock(iRow).Add(coef(jCol,iRow), tmp);
          }
@@ -157,11 +173,18 @@ void BlockDiagonalPreconditioner::Mult (const Vector & x, Vector & y) const
    MFEM_ASSERT(x.Size() == width, "incorrect input Vector size");
    MFEM_ASSERT(y.Size() == height, "incorrect output Vector size");
 
-   yblock.Update(y.GetData(), offsets);
-   xblock.Update(x.GetData(), offsets);
+   const bool use_dev = x.UseDevice() || y.UseDevice();
+   yblock.Update(y, offsets);
+   yblock.UseDevice(use_dev);
+   yblock.ReadWrite(use_dev);
+   xblock.Update(x, offsets);
+   xblock.UseDevice(use_dev);
+   xblock.Read(use_dev);
 
    for (int i=0; i<nBlocks; ++i)
    {
+      yblock.GetBlock(i).SyncAliasMemory(yblock);
+      xblock.GetBlock(i).SyncAliasMemory(xblock); // TODO: This shouldn't have to be done...
       if (op[i])
       {
          op[i]->Mult(xblock.GetBlock(i), yblock.GetBlock(i));
@@ -180,11 +203,18 @@ void BlockDiagonalPreconditioner::MultTranspose (const Vector & x,
    MFEM_ASSERT(x.Size() == height, "incorrect input Vector size");
    MFEM_ASSERT(y.Size() == width, "incorrect output Vector size");
 
-   yblock.Update(y.GetData(), offsets);
-   xblock.Update(x.GetData(), offsets);
+   const bool use_dev = x.UseDevice() || y.UseDevice();
+   yblock.Update(y, offsets);
+   yblock.UseDevice(use_dev);
+   yblock.ReadWrite(use_dev);
+   xblock.Update(x, offsets);
+   xblock.UseDevice(use_dev);
+   xblock.Read(use_dev);
 
    for (int i=0; i<nBlocks; ++i)
    {
+      yblock.GetBlock(i).SyncAliasMemory(yblock);
+      xblock.GetBlock(i).SyncAliasMemory(xblock); // TODO: This shouldn't have to be done
       if (op[i])
       {
          (op[i])->MultTranspose(xblock.GetBlock(i), yblock.GetBlock(i));
@@ -247,12 +277,20 @@ void BlockLowerTriangularPreconditioner::Mult (const Vector & x,
    MFEM_ASSERT(x.Size() == width, "incorrect input Vector size");
    MFEM_ASSERT(y.Size() == height, "incorrect output Vector size");
 
-   yblock.Update(y.GetData(),offsets);
-   xblock.Update(x.GetData(),offsets);
+   const bool use_dev = x.UseDevice() || y.UseDevice();
+   yblock.Update(y,offsets);
+   yblock.UseDevice(use_dev);
+   yblock.ReadWrite(use_dev);
+   xblock.Update(x,offsets);
+   xblock.UseDevice(use_dev);
+   xblock.Read(use_dev);
+   tmp.UseDevice(use_dev);
+   tmp2.UseDevice(use_dev);
 
    y = 0.0;
    for (int iRow=0; iRow < nBlocks; ++iRow)
    {
+      xblock.GetBlock(iRow).SyncAliasMemory(xblock); // TODO: This shouldn't have to be done...
       tmp.SetSize(offsets[iRow+1] - offsets[iRow]);
       tmp2.SetSize(offsets[iRow+1] - offsets[iRow]);
       tmp2 = 0.0;
@@ -261,10 +299,12 @@ void BlockLowerTriangularPreconditioner::Mult (const Vector & x,
       {
          if (op(iRow,jCol))
          {
+            yblock.GetBlock(jCol).SyncAliasMemory(yblock);
             op(iRow,jCol)->Mult(yblock.GetBlock(jCol), tmp);
             tmp2 -= tmp;
          }
       }
+      yblock.GetBlock(iRow).SyncAliasMemory(yblock);
       if (op(iRow,iRow))
       {
          op(iRow,iRow)->Mult(tmp2, yblock.GetBlock(iRow));
@@ -283,12 +323,20 @@ void BlockLowerTriangularPreconditioner::MultTranspose (const Vector & x,
    MFEM_ASSERT(x.Size() == height, "incorrect input Vector size");
    MFEM_ASSERT(y.Size() == width, "incorrect output Vector size");
 
-   yblock.Update(y.GetData(),offsets);
-   xblock.Update(x.GetData(),offsets);
+   const bool use_dev = x.UseDevice() || y.UseDevice();
+   yblock.Update(y,offsets);
+   yblock.UseDevice(use_dev);
+   yblock.ReadWrite(use_dev);
+   xblock.Update(x,offsets);
+   xblock.UseDevice(use_dev);
+   xblock.Read(use_dev);
+   tmp.UseDevice(use_dev);
+   tmp2.UseDevice(use_dev);
 
    y = 0.0;
    for (int iRow=nBlocks-1; iRow >=0; --iRow)
    {
+      xblock.GetBlock(iRow).SyncAliasMemory(xblock); // TODO: This shouldn't have to be done...
       tmp.SetSize(offsets[iRow+1] - offsets[iRow]);
       tmp2.SetSize(offsets[iRow+1] - offsets[iRow]);
       tmp2 = 0.0;
@@ -297,10 +345,12 @@ void BlockLowerTriangularPreconditioner::MultTranspose (const Vector & x,
       {
          if (op(jCol,iRow))
          {
+            yblock.GetBlock(jCol).SyncAliasMemory(yblock);
             op(jCol,iRow)->MultTranspose(yblock.GetBlock(jCol), tmp);
             tmp2 -= tmp;
          }
       }
+      yblock.GetBlock(iRow).SyncAliasMemory(yblock);
       if (op(iRow,iRow))
       {
          op(iRow,iRow)->MultTranspose(tmp2, yblock.GetBlock(iRow));

@@ -189,7 +189,7 @@ static void PADiffusionSetup(const int dim,
    }
 }
 
-void DiffusionIntegrator::AssemblePA(const FiniteElementSpace &fes)
+void DiffusionIntegrator::Setup(const FiniteElementSpace &fes)
 {
    // Assumes tensor-product elements
    Mesh *mesh = fes.GetMesh();
@@ -205,9 +205,13 @@ void DiffusionIntegrator::AssemblePA(const FiniteElementSpace &fes)
    dofs1D = maps->ndof;
    quad1D = maps->nqpt;
    pa_data.SetSize(symmDims * nq * ne, Device::GetMemoryType());
-   ConstantCoefficient *cQ = dynamic_cast<ConstantCoefficient*>(Q);
-   MFEM_VERIFY(cQ != NULL, "only ConstantCoefficient is supported!");
-   const double coeff = cQ->constant;
+   double coeff = 1.0;
+   if (Q)
+   {
+      ConstantCoefficient *cQ = dynamic_cast<ConstantCoefficient*>(Q);
+      MFEM_VERIFY(cQ != NULL, "only ConstantCoefficient is supported!");
+      coeff = cQ->constant;
+   }
    PADiffusionSetup(dim, dofs1D, quad1D, ne, ir->GetWeights(), geom->J,
                     coeff, pa_data);
 }

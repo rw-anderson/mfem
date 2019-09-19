@@ -74,6 +74,19 @@ BlockVector::BlockVector(double *data, const Array<int> & bOffsets):
    SetBlocks();
 }
 
+void BlockVector::Update(const Vector& data, const Array<int> &bOffsets)
+{
+   NewMemoryAndSize(data.GetMemory(), bOffsets.Last(), false);
+   blockOffsets = bOffsets.GetData();
+   if (numBlocks != bOffsets.Size()-1)
+   {
+      delete [] blocks;
+      numBlocks = bOffsets.Size()-1;
+      blocks = new Vector[numBlocks];
+   }
+   SetBlocks();
+}
+
 void BlockVector::Update(double *data, const Array<int> & bOffsets)
 {
    NewDataAndSize(data, bOffsets.Last());
@@ -164,6 +177,16 @@ void BlockVector::GetBlockView(int i, Vector & blockView)
    blockView.NewMemoryAndSize(
       Memory<double>(data, blockOffsets[i], BlockSize(i)),
       BlockSize(i), true);
+}
+
+
+void BlockVector::UseDevice(bool use_dev)
+{
+   Vector::UseDevice(use_dev);
+   for (int i = 0; i < numBlocks; ++i)
+   {
+      blocks[i].UseDevice(use_dev);
+   }
 }
 
 }
