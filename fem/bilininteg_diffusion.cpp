@@ -1085,13 +1085,16 @@ MFEM_FOREACH_THREAD(i,x,Q1D)\
 MFEM_SYNC_THREAD; \
 }
 
+MFEM_JIT
 template<int T_D1D = 0, int T_Q1D = 0>
 void BP3Global_v0(const int NE,
                   const Array<double> &b_,
                   const Array<double> &g_,
                   const Vector &d_,
                   const Vector &x_,
-                  Vector &y_)
+                  Vector &y_,
+                  const int d1d = 0,
+                  const int q1d = 0)
 {
 
    const int D1D = T_D1D ? T_D1D : 1;
@@ -1533,7 +1536,7 @@ static void PADiffusionApply(const int dim,
    }
 #endif // MFEM_USE_OCCA
 
-#ifdef MFEM_USE_JIT      
+#ifdef MFEM_USE_JIT
    static bool BP3Global = getenv("LBP");
    if (BP3Global)
    {
@@ -1562,13 +1565,13 @@ static void PADiffusionApply(const int dim,
       {
          switch ((D1D << 4 ) | Q1D)
          {
-            case 0x23: return SmemPADiffusionApply3D<2,3>(NE,B,G,Bt,Gt,op,x,y);
-            case 0x34: return SmemPADiffusionApply3D<3,4>(NE,B,G,Bt,Gt,op,x,y);
-            case 0x45: return SmemPADiffusionApply3D<4,5>(NE,B,G,Bt,Gt,op,x,y);
-            case 0x56: return SmemPADiffusionApply3D<5,6>(NE,B,G,Bt,Gt,op,x,y);
-            case 0x67: return SmemPADiffusionApply3D<6,7>(NE,B,G,Bt,Gt,op,x,y);
-            case 0x78: return SmemPADiffusionApply3D<7,8>(NE,B,G,Bt,Gt,op,x,y);
-            case 0x89: return SmemPADiffusionApply3D<8,9>(NE,B,G,Bt,Gt,op,x,y);
+            case 0x23: return SmemPADiffusionApply3D<2,3>(NE,B,G,op,x,y);
+            case 0x34: return SmemPADiffusionApply3D<3,4>(NE,B,G,op,x,y);
+            case 0x45: return SmemPADiffusionApply3D<4,5>(NE,B,G,op,x,y);
+            case 0x56: return SmemPADiffusionApply3D<5,6>(NE,B,G,op,x,y);
+            case 0x67: return SmemPADiffusionApply3D<6,7>(NE,B,G,op,x,y);
+            case 0x78: return SmemPADiffusionApply3D<7,8>(NE,B,G,op,x,y);
+            case 0x89: return SmemPADiffusionApply3D<8,9>(NE,B,G,op,x,y);
                // default:   return PADiffusionApply3D(NE,B,G,Bt,Gt,op,x,y,D1D,Q1D);
          }
       }
