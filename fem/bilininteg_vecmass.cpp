@@ -76,17 +76,26 @@ void VectorMassIntegrator::Setup(const FiniteElementSpace &fes)
       auto W = ir->GetWeights().Read();
       auto J = Reshape(geom->J.Read(), NQ,3,3,NE);
       auto v = Reshape(pa_data.Write(), NQ,NE);
-      MFEM_FORALL(e, NE,
+      const int Q1D = quad1D;
+      const int T1D = Q1D > 8 ? 8 : Q1D;
+      MFEM_FORALL_3D(e, NE, T1D, T1D, T1D,
       {
-         for (int q = 0; q < NQ; ++q)
+         MFEM_FOREACH_THREAD(qx, x, Q1D)
          {
-            const double J11 = J(q,0,0,e), J12 = J(q,0,1,e), J13 = J(q,0,2,e);
-            const double J21 = J(q,1,0,e), J22 = J(q,1,1,e), J23 = J(q,1,2,e);
-            const double J31 = J(q,2,0,e), J32 = J(q,2,1,e), J33 = J(q,2,2,e);
-            const double detJ = J11 * (J22 * J33 - J32 * J23) -
-            /* */               J21 * (J12 * J33 - J32 * J13) +
-            /* */               J31 * (J12 * J23 - J22 * J13);
-            v(q,e) = W[q] * constant * detJ;
+            MFEM_FOREACH_THREAD(qy, y, Q1D)
+            {
+               MFEM_FOREACH_THREAD(qz, z, Q1D)
+               {
+                  const int q = qx + (qy + qz * Q1D) * Q1D;
+                  const double J11 = J(q,0,0,e), J12 = J(q,0,1,e), J13 = J(q,0,2,e);
+                  const double J21 = J(q,1,0,e), J22 = J(q,1,1,e), J23 = J(q,1,2,e);
+                  const double J31 = J(q,2,0,e), J32 = J(q,2,1,e), J33 = J(q,2,2,e);
+                  const double detJ = J11 * (J22 * J33 - J32 * J23) -
+                  /* */               J21 * (J12 * J33 - J32 * J13) +
+                  /* */               J31 * (J12 * J23 - J22 * J13);
+                  v(q,e) = W[q] * constant * detJ;
+               }
+            }
          }
       });
    }

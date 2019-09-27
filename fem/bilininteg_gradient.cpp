@@ -548,7 +548,7 @@ static void SmemPAGradientApply3D(const int NE,
    auto x = Reshape(x_.Read(), TR_D1D, TR_D1D, TR_D1D, NE);
    auto y = Reshape(y_.ReadWrite(), TE_D1D, TE_D1D, TE_D1D, 3, NE);
 
-   MFEM_FORALL_3D(e, NE, Q1D, Q1D, Q1D,
+   MFEM_FORALL_3D(e, NE, (Q1D>8)?8:Q1D, (Q1D>8)?8:Q1D, (Q1D>8)?8:Q1D,
    {
       const int tidz = MFEM_THREAD_ID(z);
       const int D1DR = T_TR_D1D ? T_TR_D1D : tr_d1d;
