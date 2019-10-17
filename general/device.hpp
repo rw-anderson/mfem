@@ -28,7 +28,7 @@ struct Backend
 {
    /** @brief In the documentation below, we use square brackets to indicate the
        type of the backend: host or device. */
-   enum Id
+   enum Id: unsigned long
    {
       /// [host] Default CPU backend: sequential execution on each MPI rank.
       CPU = 1 << 0,
@@ -54,7 +54,10 @@ struct Backend
       OCCA_OMP = 1 << 8,
       /** @brief [device] OCCA CUDA backend. Enabled when MFEM_USE_OCCA = YES
           and MFEM_USE_CUDA = YES. */
-      OCCA_CUDA = 1 << 9
+      OCCA_CUDA = 1 << 9,
+      /** @brief [host] Debug backend: host memory is READ/WRITE protected
+          while a device is in use. */
+      DEBUG = 1 << 10
    };
 
    /** @brief Additional useful constants. For example, the *_MASK constants can
@@ -62,7 +65,7 @@ struct Backend
    enum
    {
       /// Number of backends: from (1 << 0) to (1 << (NUM_BACKENDS-1)).
-      NUM_BACKENDS = 10,
+      NUM_BACKENDS = 11,
 
       /// Biwise-OR of all CPU backends
       CPU_MASK = CPU | RAJA_CPU | OCCA_CPU,
@@ -74,7 +77,6 @@ struct Backend
       OMP_MASK = OMP | RAJA_OMP | OCCA_OMP,
       /// Biwise-OR of all device backends
       DEVICE_MASK = CUDA_MASK | HIP_MASK,
-
       /// Biwise-OR of all RAJA backends
       RAJA_MASK = RAJA_CPU | RAJA_OMP | RAJA_CUDA,
       /// Biwise-OR of all OCCA backends
@@ -101,6 +103,7 @@ struct Backend
 class Device
 {
 private:
+   friend class MemoryManager;
    enum MODES {SEQUENTIAL, ACCELERATED};
 
    static Device device_singleton;
@@ -113,8 +116,11 @@ private:
    bool destroy_mm;
    bool mpi_gpu_aware;
 
-   MemoryType mem_type;    ///< Current Device MemoryType
-   MemoryClass mem_class;  ///< Current Device MemoryClass
+   MemoryType host_mem_type;      ///< Current Host MemoryType
+   MemoryClass host_mem_class;    ///< Current Host MemoryClass
+
+   MemoryType device_mem_type;    ///< Current Device MemoryType
+   MemoryClass device_mem_class;  ///< Current Device MemoryClass
 
    Device(Device const&);
    void operator=(Device const&);
@@ -150,8 +156,10 @@ public:
         backends(Backend::CPU),
         destroy_mm(false),
         mpi_gpu_aware(false),
-        mem_type(MemoryType::HOST),
-        mem_class(MemoryClass::HOST)
+        host_mem_type(MemoryType::HOST),
+        host_mem_class(MemoryClass::HOST),
+        device_mem_type(MemoryType::HOST),
+        device_mem_class(MemoryClass::HOST)
    { }
 
    /** @brief Construct a Device and configure it based on the @a device string.
@@ -165,8 +173,10 @@ public:
         backends(Backend::CPU),
         destroy_mm(false),
         mpi_gpu_aware(false),
-        mem_type(MemoryType::HOST),
-        mem_class(MemoryClass::HOST)
+        host_mem_type(MemoryType::HOST),
+        host_mem_class(MemoryClass::HOST),
+        device_mem_type(MemoryType::HOST),
+        device_mem_class(MemoryClass::HOST)
    { Configure(device, dev); }
 
    /// Destructor.
@@ -183,7 +193,7 @@ public:
        * The 'cpu' backend is always enabled with lowest priority.
        * The current backend priority from highest to lowest is: 'occa-cuda',
          'raja-cuda', 'cuda', 'hip', 'occa-omp', 'raja-omp', 'omp', 'occa-cpu',
-         'raja-cpu', 'cpu'.
+         'raja-cpu', 'cpu', 'debug'.
        * Multiple backends can be configured at the same time.
        * Only one 'occa-*' backend can be configured at a time.
        * The backend 'occa-cuda' enables the 'cuda' backend unless 'raja-cuda'
@@ -212,14 +222,23 @@ public:
    static inline bool Allows(unsigned long b_mask)
    { return Get().backends & b_mask; }
 
+   /** @brief Get the current Host MemoryType. This is the MemoryType used by
+       most MFEM classes when allocating memory used on the host.
+   */
+   static inline MemoryType GetHostMemoryType() { return Get().host_mem_type; }
+
+   /** @brief Get the current Host MemoryClass. This is the MemoryClass used
+       by most MFEM host Memory objects. */
+   static inline MemoryClass GetHostMemoryClass() { return Get().host_mem_class; }
+
    /** @brief Get the current Device MemoryType. This is the MemoryType used by
        most MFEM classes when allocating memory to be used with device kernels.
    */
-   static inline MemoryType GetMemoryType() { return Get().mem_type; }
+   static inline MemoryType GetMemoryType() { return Get().device_mem_type; }
 
    /** @brief Get the current Device MemoryClass. This is the MemoryClass used
        by most MFEM device kernels to access Memory objects. */
-   static inline MemoryClass GetMemoryClass() { return Get().mem_class; }
+   static inline MemoryClass GetMemoryClass() { return Get().device_mem_class; }
 
    static void SetGPUAwareMPI(const bool force = true)
    { Get().mpi_gpu_aware = force; }
@@ -227,6 +246,15 @@ public:
    static bool GetGPUAwareMPI() { return Get().mpi_gpu_aware; }
 
    static void Synchronize() { MFEM_DEVICE_SYNC; }
+
+   static bool IsUsingUmpire()
+   {
+#ifndef MFEM_USE_UMPIRE
+      return false;
+#else
+      return true;
+#endif
+   }
 };
 
 

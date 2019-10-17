@@ -29,7 +29,7 @@ void mfem_cuda_error(cudaError_t err, const char *expr, const char *func,
              << "\n ... in file: " << file << ':' << line << '\n';
    mfem_error();
 }
-#endif
+#endif // MFEM_USE_CUDA
 
 void* CuMemAlloc(void** dptr, size_t bytes)
 {
@@ -40,6 +40,21 @@ void* CuMemAlloc(void** dptr, size_t bytes)
    mfem_backtrace();
 #endif
    MFEM_GPU_CHECK(cudaMalloc(dptr, bytes));
+#ifdef MFEM_TRACK_CUDA_MEM
+   mfem::out << "done: " << *dptr << std::endl;
+#endif
+#endif
+   return *dptr;
+}
+
+void* CuMallocManaged(void** dptr, size_t bytes)
+{
+#ifdef MFEM_USE_CUDA
+#ifdef MFEM_TRACK_CUDA_MEM
+   mfem::out << "CuMallocManaged(): allocating " << bytes << " bytes ... "
+             << std::flush;
+#endif
+   MFEM_GPU_CHECK(cudaMallocManaged(dptr, bytes));
 #ifdef MFEM_TRACK_CUDA_MEM
    mfem::out << "done: " << *dptr << std::endl;
 #endif
@@ -133,6 +148,13 @@ void* CuMemcpyDtoHAsync(void *dst, const void *src, size_t bytes)
    MFEM_GPU_CHECK(cudaMemcpyAsync(dst, src, bytes, cudaMemcpyDeviceToHost));
 #endif
    return dst;
+}
+
+void CuGetLastError()
+{
+#ifdef MFEM_USE_CUDA
+   MFEM_GPU_CHECK(cudaGetLastError());
+#endif
 }
 
 int CuGetDeviceCount()
