@@ -415,6 +415,10 @@ MFEM_USE_PUMI = YES/NO
    models and effectively supports automated adaptive analysis. PUMI enables
    support for parallel unstructured mesh modifications in MFEM.
 
+MFEM_USE_UMPIRE = YES/NO Enables support for Umpire, which is a resource
+   management library that allows the discovery, provision, and management of
+   memory on machines with multiple memory devices like NUMA and GPUs.
+
 MFEM_USE_CUDA = YES/NO
    Enables support for CUDA devices in MFEM. CUDA is a parallel computing
    platform and programming model for general computing on graphical processing
@@ -573,6 +577,10 @@ The specific libraries and their options are:
   URL: https://github.com/LLNL/RAJA
   Options: RAJA_DIR, RAJA_OPT, RAJA_LIB.
 
+- UMPIRE, used when MFEM_USE_UMPIRE = YES.
+  URL: https://github.com/LLNL/Umpire
+  Options: UMPIRE_DIR, UMPIRE_OPT, UMPIRE_LIB.
+
 - MPFR (optional), used when MFEM_USE_MPFR = YES.
   URL: http://mpfr.org, it depends on the GMP library: https://gmplib.org
   Options: MPFR_OPT, MPFR_LIB.
@@ -712,6 +720,11 @@ MFEM_USE_PUMI
 MFEM_USE_CUDA
 MFEM_USE_OCCA
 MFEM_USE_RAJA
+<<<<<<< HEAD
+MFEM_USE_MM
+MFEM_USE_UMPIRE
+=======
+>>>>>>> master
 
 The following options are CMake specific:
 
@@ -760,6 +773,7 @@ The CMake build system adds auto-detection for the following packages/libraries:
  - PUMI
  - OCCA
  - RAJA
+ - UMPIRE
 
 The following built-in CMake packages are also used:
 

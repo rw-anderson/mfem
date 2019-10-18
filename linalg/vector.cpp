@@ -10,7 +10,6 @@
 // Software Foundation) version 2.1 dated February 1999.
 
 // Implementation of data type vector
-
 #include "vector.hpp"
 #include "dtensor.hpp"
 #include "../general/forall.hpp"
@@ -882,7 +881,7 @@ static double cuVectorMin(const int N, const double *X)
    const int min_sz = (N%tpb)==0? (N/tpb) : (1+N/tpb);
    cuda_reduce_buf.SetSize(min_sz);
    Memory<double> &buf = cuda_reduce_buf.GetMemory();
-   double *d_min = buf.Write(MemoryClass::CUDA, min_sz);
+   double *d_min = buf.Write(MemoryClass::DEVICE, min_sz);
    cuKernelMin<<<gridSize,blockSize>>>(N, d_min, X);
    MFEM_GPU_CHECK(cudaGetLastError());
    const double *h_min = buf.Read(MemoryClass::HOST, min_sz);
@@ -925,7 +924,7 @@ static double cuVectorDot(const int N, const double *X, const double *Y)
    const int dot_sz = (N%tpb)==0? (N/tpb) : (1+N/tpb);
    cuda_reduce_buf.SetSize(dot_sz);
    Memory<double> &buf = cuda_reduce_buf.GetMemory();
-   double *d_dot = buf.Write(MemoryClass::CUDA, dot_sz);
+   double *d_dot = buf.Write(MemoryClass::DEVICE, dot_sz);
    cuKernelDot<<<gridSize,blockSize>>>(N, d_dot, X, Y);
    MFEM_GPU_CHECK(cudaGetLastError());
    const double *h_dot = buf.Read(MemoryClass::HOST, dot_sz);
@@ -991,11 +990,24 @@ double Vector::operator*(const Vector &v) const
       return prod;
    }
 #endif
-
+   if (Device::Allows(Backend::DEBUG))
+   {
+      const int N = size;
+      auto v_data = v.Read();
+      auto m_data = Read();
+      Vector dot(1);
+      dot.UseDevice(true);
+      auto d_dot = dot.Write();
+      dot = 0.0;
+      MFEM_FORALL(i, N, d_dot[0] += m_data[i] * v_data[i];);
+      dot.HostReadWrite();
+      return dot[0];
+   }
 vector_dot_cpu:
    return operator*(v_data);
 }
 
+#include <unistd.h>
 double Vector::Min() const
 {
    if (size == 0) { return infinity(); }
@@ -1031,6 +1043,19 @@ double Vector::Min() const
       return minimum;
    }
 #endif
+
+   if (Device::Allows(Backend::DEBUG))
+   {
+      const int N = size;
+      auto m_data = Read();
+      Vector min(1);
+      min = infinity();
+      min.UseDevice(true);
+      auto d_min = min.ReadWrite();
+      MFEM_FORALL(i, N, d_min[0] = (d_min[0]<m_data[i])?d_min[0]:m_data[i];);
+      min.HostReadWrite();
+      return min[0];
+   }
 
 vector_min_cpu:
    double minimum = data[0];

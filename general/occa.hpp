@@ -13,6 +13,7 @@
 #define MFEM_OCCA_HPP
 
 #include "../config/config.hpp"
+#include "error.hpp"
 
 #ifdef MFEM_USE_OCCA
 #include "mem_manager.hpp"
@@ -62,7 +63,6 @@ occa::memory OccaMemoryReadWrite(Memory<T> &mem, size_t size)
    return OccaMemoryWrap(mem.ReadWrite(Device::GetMemoryClass(), size),
                          size*sizeof(T));
 }
-
 
 /** @brief Function that determines if an OCCA kernel should be used, based on
     the current mfem::Device configuration. */

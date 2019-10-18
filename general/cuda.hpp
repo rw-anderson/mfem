@@ -33,7 +33,7 @@
    do \
    { \
       cudaError_t err = (x); \
-      if (err != cudaSuccess) \
+      if (err != cudaSuccess && err != cudaErrorCudartUnloading) \
       { \
          mfem_cuda_error(err, #x, _MFEM_FUNC_NAME, __FILE__, __LINE__); \
       } \
@@ -73,6 +73,9 @@ void mfem_cuda_error(cudaError_t err, const char *expr, const char *func,
 /// Allocates device memory
 void* CuMemAlloc(void **d_ptr, size_t bytes);
 
+/// Allocates managed device memory
+void* CuMallocManaged(void **d_ptr, size_t bytes);
+
 /// Frees device memory
 void* CuMemFree(void *d_ptr);
 
@@ -93,6 +96,8 @@ void* CuMemcpyDtoH(void *h_dst, const void *d_src, size_t bytes);
 
 /// Copies memory from Device to Host
 void* CuMemcpyDtoHAsync(void *h_dst, const void *d_src, size_t bytes);
+
+void CuGetLastError();
 
 /// Get the number of CUDA devices
 int CuGetDeviceCount();
