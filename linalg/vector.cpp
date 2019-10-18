@@ -1004,6 +1004,7 @@ vector_dot_cpu:
    return operator*(v_data);
 }
 
+#include <unistd.h>
 double Vector::Min() const
 {
    if (size == 0) { return infinity(); }
@@ -1039,6 +1040,19 @@ double Vector::Min() const
       return minimum;
    }
 #endif
+
+   if (Device::Allows(Backend::DEBUG))
+   {
+      const int N = size;
+      auto m_data = Read();
+      Vector min(1);
+      min = infinity();
+      min.UseDevice(true);
+      auto d_min = min.ReadWrite();
+      MFEM_FORALL(i, N, d_min[0] = (d_min[0]<m_data[i])?d_min[0]:m_data[i];);
+      min.HostReadWrite();
+      return min[0];
+   }
 
 vector_min_cpu:
    double minimum = data[0];
