@@ -410,7 +410,9 @@ class MemoryManager
 {
 private: // Used by the private static methods called by the Memory<T> class
 
+   typedef MemoryType MemType;
    typedef Memory<int> Mem;
+
    template <typename T> friend class Memory;
 
    /// Host memory type set during the Setup.
@@ -427,29 +429,29 @@ private: // Used by the private static methods called by the Memory<T> class
 
 private: // Static methods used by the Memory<T> class
 
-   // Allocate and register a new pointer. Return the host pointer.
-   // h_tmp must be already allocated using new T[] if mt is a pure device
-   // memory type, e.g. CUDA (mt will not be HOST).
+   /// Allocate and register a new pointer. Return the host pointer.
+   /// h_tmp must be already allocated using new T[] if mt is a pure device
+   /// memory type, e.g. CUDA (mt will not be HOST).
    static void *New_(void *h_tmp, size_t bytes, MemoryType mt, unsigned &flags);
 
-   // Register an external pointer of the given MemoryType.
-   // Return the host pointer.
+   /// Register an external pointer of the given MemoryType.
+   /// Return the host pointer.
    static void *Register_(void *ptr, void *h_ptr, size_t bytes, MemoryType mt,
                           bool own, bool alias, unsigned &flags);
 
-   // Register an alias. Note: base_h_ptr may be an alias.
+   /// Register an alias. Note: base_h_ptr may be an alias.
    static void Alias_(void *base_h_ptr, const size_t offset, const size_t bytes,
                       const unsigned base_flags, unsigned &flags);
 
-   // Un-register and free memory identified by its host pointer. Returns the
-   // memory type of the host pointer.
+   /// Un-register and free memory identified by its host pointer. Returns the
+   /// memory type of the host pointer.
    static MemoryType Delete_(void *h_ptr, unsigned flags);
 
-   // Free memory identified by its host pointer with its host deallocator.
-   static void HostDelete_(void *h_ptr, MemoryType mt, unsigned flags);
+   /// Free memory identified by its host pointer with its host deallocator.
+   static void HostDelete_(void *h_ptr, MemoryType mt);
 
-   // Return a pointer to the memory identified by the host pointer h_ptr for
-   // access with the given MemoryClass.
+   /// Return a pointer to the memory identified by the host pointer h_ptr for
+   /// access with the given MemoryClass.
    static void *ReadWrite_(void *h_ptr, MemoryClass mc, size_t bytes,
                            unsigned &flags);
 
@@ -463,26 +465,26 @@ private: // Static methods used by the Memory<T> class
                           size_t alias_bytes, unsigned base_flags,
                           unsigned &alias_flags);
 
-   // Return the type the of the currently valid memory. If more than one types
-   // are valid, return a device type.
+   /// Return the type the of the currently valid memory. If more than one types
+   /// are valid, return a device type.
    static MemoryType GetMemoryType_(void *h_ptr, unsigned flags);
 
-   // Copy entries from valid memory type to valid memory type. Both dest_h_ptr
-   // and src_h_ptr are registered host pointers.
+   /// Copy entries from valid memory type to valid memory type. Both dest_h_ptr
+   /// and src_h_ptr are registered host pointers.
    static void Copy_(void *dest_h_ptr, const void *src_h_ptr, size_t bytes,
                      unsigned src_flags, unsigned &dest_flags);
 
-   // Copy entries from valid memory type to host memory, where dest_h_ptr is
-   // not a registered host pointer and src_h_ptr is a registered host pointer.
+   /// Copy entries from valid memory type to host memory, where dest_h_ptr is
+   /// not a registered host pointer and src_h_ptr is a registered host pointer.
    static void CopyToHost_(void *dest_h_ptr, const void *src_h_ptr,
                            size_t bytes, unsigned src_flags);
 
-   // Copy entries from host memory to valid memory type, where dest_h_ptr is a
-   // registered host pointer and src_h_ptr is not a registered host pointer.
+   /// Copy entries from host memory to valid memory type, where dest_h_ptr is a
+   /// registered host pointer and src_h_ptr is not a registered host pointer.
    static void CopyFromHost_(void *dest_h_ptr, const void *src_h_ptr,
                              size_t bytes, unsigned &dest_flags);
 
-   // Check if the host pointer has been registered in the memory manager.
+   /// Check if the host pointer has been registered in the memory manager.
    static bool IsKnown_(const void *h_ptr);
 
 private: // Methods used by the static methods of this class
@@ -512,6 +514,14 @@ private: // Methods used by the static methods of this class
    /// allocating and moving the data if needed
    void *GetAliasDevicePtr(const void *alias_ptr, size_t bytes, bool copy_data);
 
+   /// Return the corresponding host pointer of d_ptr,
+   /// allocating and moving the data if needed
+   void *GetHostPtr(const void *d_ptr, size_t bytes, bool copy_data);
+
+   /// Return the corresponding host pointer of alias_ptr,
+   /// allocating and moving the data if needed
+   void *GetAliasHostPtr(const void *alias_ptr, size_t bytes, bool copy_data);
+
 public:
    MemoryManager();
    ~MemoryManager();
@@ -530,13 +540,11 @@ public:
 
    /// Prints all pointers known by the memory manager
    void PrintPtrs(void);
+
+   /// Prints all aliases known by the memory manager
+   void PrintAliases(void);
 };
 
-// *****************************************************************************
-// * Memory<T> class inline methods
-// *****************************************************************************
-
-// *****************************************************************************
 template <typename T>
 inline void Memory<T>::New(int size)
 {
@@ -547,7 +555,6 @@ inline void Memory<T>::New(int size)
            (T*)MemoryManager::New_(nullptr, size*sizeof(T), h_mt, flags);
 }
 
-// *****************************************************************************
 template <typename T>
 inline void Memory<T>::New(int size, MemoryType mt)
 {
@@ -562,7 +569,6 @@ inline void Memory<T>::New(int size, MemoryType mt)
    }
 }
 
-// *****************************************************************************
 template <typename T>
 inline void Memory<T>::Wrap(T *host_ptr, int size, bool own)
 {
@@ -572,7 +578,6 @@ inline void Memory<T>::Wrap(T *host_ptr, int size, bool own)
    flags = (own ? OWNS_HOST : 0) | VALID_HOST;
 }
 
-// *****************************************************************************
 template <typename T>
 inline void Memory<T>::Wrap(T *ptr, int size, MemoryType mt, bool own)
 {
@@ -586,7 +591,6 @@ inline void Memory<T>::Wrap(T *ptr, int size, MemoryType mt, bool own)
    h_ptr = MemoryManager::Register_(ptr, h_tmp, bytes, mt, own, false, flags);
 }
 
-// *****************************************************************************
 template <typename T>
 inline void Memory<T>::MakeAlias(const Memory &base, int offset, int size)
 {
@@ -604,7 +608,6 @@ inline void Memory<T>::MakeAlias(const Memory &base, int offset, int size)
    }
 }
 
-// *****************************************************************************
 template <typename T>
 inline void Memory<T>::Delete()
 {
@@ -619,13 +622,12 @@ inline void Memory<T>::Delete()
          }
          else
          {
-            MemoryManager::HostDelete_((void*)h_ptr, h_mt, flags);
+            MemoryManager::HostDelete_((void*)h_ptr, h_mt);
          }
       }
    }
 }
 
-// *****************************************************************************
 template <typename T>
 inline T &Memory<T>::operator[](int idx)
 {
@@ -634,7 +636,6 @@ inline T &Memory<T>::operator[](int idx)
    return h_ptr[idx];
 }
 
-// *****************************************************************************
 template <typename T>
 inline const T &Memory<T>::operator[](int idx) const
 {
@@ -642,7 +643,6 @@ inline const T &Memory<T>::operator[](int idx) const
    return h_ptr[idx];
 }
 
-// *****************************************************************************
 template <typename T>
 inline Memory<T>::operator T*()
 {
@@ -653,7 +653,6 @@ inline Memory<T>::operator T*()
    return h_ptr;
 }
 
-// *****************************************************************************
 template <typename T>
 inline Memory<T>::operator const T*() const
 {
@@ -661,7 +660,6 @@ inline Memory<T>::operator const T*() const
    return h_ptr;
 }
 
-// *****************************************************************************
 template <typename T> template <typename U>
 inline Memory<T>::operator U*()
 {
@@ -672,7 +670,6 @@ inline Memory<T>::operator U*()
    return reinterpret_cast<U*>(h_ptr);
 }
 
-// *****************************************************************************
 template <typename T> template <typename U>
 inline Memory<T>::operator const U*() const
 {
@@ -680,7 +677,6 @@ inline Memory<T>::operator const U*() const
    return reinterpret_cast<U*>(h_ptr);
 }
 
-// *****************************************************************************
 template <typename T>
 inline T *Memory<T>::ReadWrite(MemoryClass mc, int size)
 {
@@ -694,7 +690,6 @@ inline T *Memory<T>::ReadWrite(MemoryClass mc, int size)
    return (T*)MemoryManager::ReadWrite_(h_ptr, mc, bytes, flags);
 }
 
-// *****************************************************************************
 template <typename T>
 inline const T *Memory<T>::Read(MemoryClass mc, int size) const
 {
@@ -708,7 +703,6 @@ inline const T *Memory<T>::Read(MemoryClass mc, int size) const
    return (const T*)MemoryManager::Read_(h_ptr, mc, bytes, flags);
 }
 
-// *****************************************************************************
 template <typename T>
 inline T *Memory<T>::Write(MemoryClass mc, int size)
 {
@@ -722,7 +716,6 @@ inline T *Memory<T>::Write(MemoryClass mc, int size)
    return (T*)MemoryManager::Write_(h_ptr, mc, bytes, flags);
 }
 
-// *****************************************************************************
 template <typename T>
 inline void Memory<T>::Sync(const Memory &other) const
 {
@@ -737,7 +730,6 @@ inline void Memory<T>::Sync(const Memory &other) const
            (other.flags & (VALID_HOST | VALID_DEVICE));
 }
 
-// *****************************************************************************
 template <typename T>
 inline void Memory<T>::SyncAlias(const Memory &base, int alias_size) const
 {
@@ -749,7 +741,6 @@ inline void Memory<T>::SyncAlias(const Memory &base, int alias_size) const
                              base.flags, flags);
 }
 
-// *****************************************************************************
 template <typename T>
 inline MemoryType Memory<T>::GetMemoryType() const
 {
@@ -757,7 +748,6 @@ inline MemoryType Memory<T>::GetMemoryType() const
    return MemoryManager::GetMemoryType_(h_ptr, flags);
 }
 
-// *****************************************************************************
 template <typename T>
 inline void Memory<T>::CopyFrom(const Memory &src, int size)
 {
@@ -777,7 +767,6 @@ inline void Memory<T>::CopyFrom(const Memory &src, int size)
    }
 }
 
-// *****************************************************************************
 template <typename T>
 inline void Memory<T>::CopyFromHost(const T *src, int size)
 {
@@ -797,7 +786,6 @@ inline void Memory<T>::CopyFromHost(const T *src, int size)
    }
 }
 
-// *****************************************************************************
 template <typename T>
 inline void Memory<T>::CopyToHost(T *h_dest, int size) const
 {
