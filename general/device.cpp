@@ -8,6 +8,7 @@
 // MFEM is free software; you can redistribute it and/or modify it under the
 // terms of the GNU Lesser General Public License (as published by the Free
 // Software Foundation) version 2.1 dated February 1999.
+
 #include "forall.hpp"
 #include "cuda.hpp"
 #include "occa.hpp"
@@ -34,18 +35,15 @@ static const Backend::Id backend_list[Backend::NUM_BACKENDS] =
    Backend::OCCA_CUDA, Backend::RAJA_CUDA, Backend::CUDA,
    Backend::HIP,
    Backend::OCCA_OMP, Backend::RAJA_OMP, Backend::OMP,
-   Backend::OCCA_CPU, Backend::RAJA_CPU, Backend::DEBUG,
-   Backend::CPU
+   Backend::OCCA_CPU, Backend::RAJA_CPU, Backend::CPU,
+   Backend::DEBUG
 };
 
 // Backend names listed by priority, high to low:
 static const char *backend_name[Backend::NUM_BACKENDS] =
 {
-   "occa-cuda", "raja-cuda", "cuda",
-   "hip",
-   "occa-omp", "raja-omp", "omp",
-   "occa-cpu", "raja-cpu", "debug",
-   "cpu"
+   "occa-cuda", "raja-cuda", "cuda", "hip", "occa-omp", "raja-omp", "omp",
+   "occa-cpu", "raja-cpu", "cpu", "debug"
 };
 
 } // namespace mfem::internal
@@ -55,7 +53,14 @@ static const char *backend_name[Backend::NUM_BACKENDS] =
 Device Device::device_singleton;
 
 
-Device::~Device() { if (destroy_mm) { mm.Destroy(); } }
+Device::~Device()
+{
+   if (destroy_mm) { mm.Destroy(); }
+   Get().host_mem_type = MemoryType::HOST;
+   Get().host_mem_class = MemoryClass::HOST;
+   Get().device_mem_type = MemoryType::HOST;
+   Get().device_mem_class = MemoryClass::HOST;
+}
 
 void Device::Configure(const std::string &device, const int dev)
 {
@@ -121,7 +126,7 @@ void Device::Print(std::ostream &out)
 
 void Device::UpdateMemoryTypeAndClass()
 {
-   if ( IsUsingUmpire())
+   if (IsUsingUmpire())
    {
       host_mem_type = MemoryType::HOST_UMPIRE;
       host_mem_class = MemoryClass::HOST_UMPIRE;
@@ -151,9 +156,9 @@ void Device::UpdateMemoryTypeAndClass()
 
 void Device::Enable()
 {
-   const bool accelerated = Get().backends & ~Backend::CPU;
+   const bool accelerated = Get().backends & ~(Backend::CPU | Backend::DEBUG);
    if (accelerated) { Get().mode = Device::ACCELERATED;}
-   if (accelerated || IsUsingUmpire()) { Get().UpdateMemoryTypeAndClass(); }
+   Get().UpdateMemoryTypeAndClass();
 }
 
 #ifdef MFEM_USE_CUDA
@@ -162,7 +167,6 @@ static void DeviceSetup(const int dev, int &ngpu)
    ngpu = CuGetDeviceCount();
    MFEM_VERIFY(ngpu > 0, "No CUDA device found!");
    MFEM_GPU_CHECK(cudaSetDevice(dev));
-   MFEM_DEVICE_SYNC;
 }
 #endif
 
@@ -251,16 +255,8 @@ void Device::Setup(const int device)
 
    ngpu = 0;
    dev = device;
-
-   const bool debug = Allows(Backend::DEBUG);
-   const bool hip = Allows(Backend::HIP_MASK);
-   const bool cuda = Allows(Backend::CUDA_MASK);
-   const bool raja = Allows(Backend::RAJA_MASK);
-   const bool occa = Allows(Backend::OCCA_MASK);
-   const bool openmp = Allows(Backend::OMP|Backend::RAJA_OMP);
-
 #ifndef MFEM_USE_CUDA
-   MFEM_VERIFY(!cuda,
+   MFEM_VERIFY(!Allows(Backend::CUDA_MASK),
                "the CUDA backends require MFEM built with MFEM_USE_CUDA=YES");
 #endif
 #ifndef MFEM_USE_HIP
@@ -268,21 +264,19 @@ void Device::Setup(const int device)
                "the HIP backends require MFEM built with MFEM_USE_HIP=YES");
 #endif
 #ifndef MFEM_USE_RAJA
-   MFEM_VERIFY(!raja,
+   MFEM_VERIFY(!Allows(Backend::RAJA_MASK),
                "the RAJA backends require MFEM built with MFEM_USE_RAJA=YES");
 #endif
 #ifndef MFEM_USE_OPENMP
-   MFEM_VERIFY(!openmp,
+   MFEM_VERIFY(!Allows(Backend::OMP|Backend::RAJA_OMP),
                "the OpenMP and RAJA OpenMP backends require MFEM built with"
                " MFEM_USE_OPENMP=YES");
 #endif
-
-   // Device backends setup
-   if (occa) { OccaDeviceSetup(dev); }
-   if (hip) { HipDeviceSetup(dev, ngpu); }
-   if (cuda) { CudaDeviceSetup(dev, ngpu); }
-   if (raja) { RajaDeviceSetup(dev, ngpu); }
-   if (debug && !Allows(Backend::DEVICE_MASK)) { ngpu = 1; }
+   if (Allows(Backend::CUDA)) { CudaDeviceSetup(dev, ngpu); }
+   if (Allows(Backend::HIP)) { HipDeviceSetup(dev, ngpu); }
+   if (Allows(Backend::RAJA_CUDA)) { RajaDeviceSetup(dev, ngpu); }
+   // The check for MFEM_USE_OCCA is in the function OccaDeviceSetup().
+   if (Allows(Backend::OCCA_MASK)) { OccaDeviceSetup(dev); }
 }
 
 } // mfem

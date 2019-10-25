@@ -10,6 +10,7 @@
 // Software Foundation) version 2.1 dated February 1999.
 
 // Implementation of data type vector
+
 #include "vector.hpp"
 #include "dtensor.hpp"
 #include "../general/forall.hpp"
@@ -1007,7 +1008,6 @@ vector_dot_cpu:
    return operator*(v_data);
 }
 
-#include <unistd.h>
 double Vector::Min() const
 {
    if (size == 0) { return infinity(); }

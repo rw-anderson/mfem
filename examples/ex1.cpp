@@ -49,8 +49,6 @@
 //               optional connection to the GLVis tool for visualization.
 
 #include "mfem.hpp"
-#include "../general/dbg.hpp"
-#include "../general/mem_manager.hpp"
 #include <fstream>
 #include <iostream>
 
@@ -64,8 +62,6 @@ int main(int argc, char *argv[])
    int order = 1;
    bool static_cond = false;
    bool pa = false;
-   bool mmu = false;
-   bool mem = false;
    const char *device_config = "cpu";
    bool visualization = true;
 
@@ -79,10 +75,6 @@ int main(int argc, char *argv[])
                   "--no-static-condensation", "Enable static condensation.");
    args.AddOption(&pa, "-pa", "--partial-assembly", "-no-pa",
                   "--no-partial-assembly", "Enable Partial Assembly.");
-   args.AddOption(&mmu, "-y", "--mmu", "-no-y",
-                  "--no-mmu", "Enable MMU test on vector Y.");
-   args.AddOption(&mem, "-b", "--mem", "-no-b",
-                  "--no-mem", "Enable memory backends tests.");
    args.AddOption(&device_config, "-d", "--device",
                   "Device configuration string, see Device::Configure().");
    args.AddOption(&visualization, "-vis", "--visualization", "-no-vis",
@@ -113,69 +105,11 @@ int main(int argc, char *argv[])
    //    elements.
    {
       int ref_levels =
-         (int)floor(log(50./mesh->GetNE())/log(2.)/dim);
+         (int)floor(log(50000./mesh->GetNE())/log(2.)/dim);
       for (int l = 0; l < ref_levels; l++)
       {
          mesh->UniformRefinement();
       }
-   }
-
-   if (mmu)
-   {
-      dbg("Vector Y(16)");
-      Vector Y(16);
-      dbg("bkp address");
-      double *Yd = (double*)Y;
-      dbg("UseDevice");
-      Y.UseDevice(true);
-      dbg("Y = 0.0");
-      Y = 0.0;
-      // in debug device, should raise a SIGBUS/SIGSEGV
-      dbg("Yd[0] = 0.0;");
-      Yd[0] = 0.0;
-      dbg("delete mesh;");
-      delete mesh;
-      return 0;
-   }
-
-   if (mem)
-   {
-      //dbg("mem_cuda");
-      //Memory<double> mem_cuda(4096, MemoryType::DEVICE);
-      constexpr int N = 1 + static_cast<int>(MemoryType::DEVICE_UVM);
-      dbg("N: %d", N);
-      Vector v[N];
-      MemoryType mt = MemoryType::HOST;
-      for (int i=0; i<N; i++, mt++)
-      {
-         if (!Device::Allows(Backend::DEVICE_MASK) &&
-             !mfem::IsHostMemory(mt)) { continue; }
-         if (i==static_cast<int>(MemoryType::HOST_UMPIRE)) { continue; }
-         if (i==static_cast<int>(MemoryType::DEVICE_UMPIRE)) { continue; }
-         constexpr int size = 1024;
-         dbg("\033[7m%d", static_cast<int>(mt));
-         Memory<double> mem(size, mt);
-         //MemoryPrintFlags(mem.GetFlags());
-         MFEM_VERIFY(mem.Capacity() == size,"");
-         dbg("&y = v[i]");
-         Vector &y = v[i];
-         dbg("NewMemoryAndSize");
-         y.NewMemoryAndSize(mem, size, true);
-         dbg("UseDevice");
-         y.UseDevice(true);
-         dbg("HostWrite");
-         y.HostWrite();
-         dbg("Write");
-         y.Write();
-         dbg("y = 0.0");
-         y = 0.0;
-         dbg("HostRead");
-         y.HostRead();
-         dbg("%p", (void*)y.GetData());
-         y.Destroy();
-      }
-      delete mesh;
-      return 0;
    }
 
    // 5. Define a finite element space on the mesh. Here we use continuous
@@ -288,14 +222,10 @@ int main(int argc, char *argv[])
    }
 
    // 15. Free the used memory.
-   dbg("delete a");
    delete a;
-   dbg("delete b");
    delete b;
-   dbg("delete fespace");
    delete fespace;
    if (order > 0) { delete fec; }
-   dbg("delete mesh");
    delete mesh;
 
    return 0;
