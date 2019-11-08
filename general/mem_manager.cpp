@@ -45,11 +45,11 @@ MemoryType GetMemoryType(MemoryClass mc)
       case MemoryClass::HOST_UMPIRE:   return MemoryType::HOST_UMPIRE;
       case MemoryClass::HOST_32:       return MemoryType::HOST_32;
       case MemoryClass::HOST_64:       return MemoryType::HOST_64;
-      case MemoryClass::HOST_MMU:      return MemoryType::HOST_MMU;
+      case MemoryClass::HOST_DEBUG:    return MemoryType::HOST_DEBUG;
       case MemoryClass::DEVICE:        return MemoryType::DEVICE;
       case MemoryClass::DEVICE_UMPIRE: return MemoryType::DEVICE_UMPIRE;
       case MemoryClass::DEVICE_UVM:    return MemoryType::DEVICE_UVM;
-      case MemoryClass::DEVICE_MMU:    return MemoryType::DEVICE_MMU;
+      case MemoryClass::DEVICE_DEBUG:  return MemoryType::DEVICE_DEBUG;
    }
    MFEM_ASSERT(false, "Unknown MemoryClass!");
    return MemoryType::HOST;
@@ -57,19 +57,19 @@ MemoryType GetMemoryType(MemoryClass mc)
 
 MemoryClass operator*(MemoryClass mc1, MemoryClass mc2)
 {
-   //                | HOST           HOST_UMPIRE    HOST_32        HOST_64        HOST_MMU       DEVICE         DEVICE_UMPIRE  DEVICE_UVM
+   //                | HOST           HOST_UMPIRE    HOST_32        HOST_64        HOST_DEBUG     DEVICE         DEVICE_UMPIRE  DEVICE_UVM
    // ---------------+--------------------------------------------------------------------------------------------------------------------
-   //  HOST          | HOST           HOST_UMPIRE    HOST_32        HOST_64        HOST_MMU       DEVICE         DEVICE_UMPIRE  DEVICE_UVM
-   //  HOST_UMPIRE   | HOST_UMPIRE    HOST_UMPIRE    HOST_32        HOST_64        HOST_MMU       DEVICE         DEVICE_UMPIRE  DEVICE_UVM
-   //  HOST_32       | HOST_32        HOST_32        HOST_32        HOST_64        HOST_MMU       DEVICE         DEVICE_UMPIRE  DEVICE_UVM
-   //  HOST_64       | HOST_64        HOST_64        HOST_64        HOST_64        HOST_MMU       DEVICE         DEVICE_UMPIRE  DEVICE_UVM
-   //  HOST_MMU      | HOST_MMU       HOST_MMU       HOST_MMU       HOST_MMU       HOST_MMU       DEVICE         DEVICE_UMPIRE  DEVICE_UVM
+   //  HOST          | HOST           HOST_UMPIRE    HOST_32        HOST_64        HOST_DEBUG     DEVICE         DEVICE_UMPIRE  DEVICE_UVM
+   //  HOST_UMPIRE   | HOST_UMPIRE    HOST_UMPIRE    HOST_32        HOST_64        HOST_DEBUG     DEVICE         DEVICE_UMPIRE  DEVICE_UVM
+   //  HOST_32       | HOST_32        HOST_32        HOST_32        HOST_64        HOST_DEBUG     DEVICE         DEVICE_UMPIRE  DEVICE_UVM
+   //  HOST_64       | HOST_64        HOST_64        HOST_64        HOST_64        HOST_DEBUG     DEVICE         DEVICE_UMPIRE  DEVICE_UVM
+   //  HOST_DEBUG    | HOST_DEBUG     HOST_DEBUG     HOST_DEBUG     HOST_DEBUG     HOST_DEBUG     DEVICE         DEVICE_UMPIRE  DEVICE_UVM
    //  DEVICE        | DEVICE         DEVICE         DEVICE         DEVICE         DEVICE         DEVICE         DEVICE_UMPIRE  DEVICE_UVM
    //  DEVICE_UMPIRE | DEVICE_UMPIRE  DEVICE_UMPIRE  DEVICE_UMPIRE  DEVICE_UMPIRE  DEVICE_UMPIRE  DEVICE_UMPIRE  DEVICE_UMPIRE  DEVICE_UVM
    //  DEVICE_UVM    | DEVICE_UVM     DEVICE_UVM     DEVICE_UVM     DEVICE_UVM     DEVICE_UVM     DEVICE_UVM     DEVICE_UVM     DEVICE_UVM
 
    // Using the enumeration ordering:
-   // HOST < HOST_UMPIRE < HOST_32 < HOST_64 < HOST_MMU < DEVICE < DEVICE_UMPIRE < DEVICE_UVM < DEVICE_MMU,
+   // HOST < HOST_UMPIRE < HOST_32 < HOST_64 < HOST_DEBUG < DEVICE < DEVICE_UMPIRE < DEVICE_UVM < DEVICE_DEBUG,
    // the above table is simply: a*b = max(a,b).
 
    return std::max(mc1, mc2);
@@ -185,7 +185,7 @@ public:
 static uintptr_t pagesize = 0;
 static uintptr_t pagemask = 0;
 
-/// Returns the restricted base address of the MMU segment
+/// Returns the restricted base address of the DEBUG segment
 inline const void *MmuAddrR(const void *ptr)
 {
    const uintptr_t addr = (uintptr_t) ptr;
@@ -412,6 +412,7 @@ class UmpireDeviceMemorySpace : public NoDeviceMemorySpace { };
 class UmpireHostMemorySpace : public HostMemorySpace
 {
 private:
+   const char *name;
    umpire::ResourceManager &rm;
    umpire::Allocator h_allocator;
    umpire::strategy::AllocationStrategy *strat;
@@ -419,11 +420,11 @@ public:
    ~UmpireHostMemorySpace() { h_allocator.release(); }
    UmpireHostMemorySpace():
       HostMemorySpace(),
+      name(mm.GetUmpireAllocatorHostName()),
       rm(umpire::ResourceManager::getInstance()),
-      h_allocator(rm.isAllocator(MFEM_UMPIRE_HOST)?
-                  rm.getAllocator(MFEM_UMPIRE_HOST):
+      h_allocator(rm.isAllocator(name)? rm.getAllocator(name):
                   rm.makeAllocator<umpire::strategy::DynamicPool>
-                  (MFEM_UMPIRE_HOST, rm.getAllocator("HOST"))),
+                  (name, rm.getAllocator("HOST"))),
       strat(h_allocator.getAllocationStrategy()) { }
    void Alloc(void **ptr, size_t bytes) { *ptr = h_allocator.allocate(bytes); }
    void Dealloc(void *ptr) { h_allocator.deallocate(ptr); }
@@ -433,16 +434,18 @@ public:
 class UmpireDeviceMemorySpace : public DeviceMemorySpace
 {
 private:
+   const char *name;
    umpire::ResourceManager &rm;
    umpire::Allocator d_allocator;
 public:
    ~UmpireDeviceMemorySpace() { d_allocator.release(); }
-   UmpireDeviceMemorySpace(): DeviceMemorySpace(),
+   UmpireDeviceMemorySpace():
+      DeviceMemorySpace(),
+      name(mm.GetUmpireAllocatorDeviceName()),
       rm(umpire::ResourceManager::getInstance()),
-      d_allocator(rm.isAllocator(MFEM_UMPIRE_DEVICE)?
-                  rm.getAllocator(MFEM_UMPIRE_DEVICE):
+      d_allocator(rm.isAllocator(name)? rm.getAllocator(name):
                   rm.makeAllocator<umpire::strategy::DynamicPool>
-                  (MFEM_UMPIRE_DEVICE, rm.getAllocator("DEVICE"))) { }
+                  (name, rm.getAllocator("DEVICE"))) { }
    void Alloc(Memory &base) { base.d_ptr = d_allocator.allocate(base.bytes); }
    void Dealloc(Memory &base) { d_allocator.deallocate(base.d_ptr); }
    void *HtoD(void *dst, const void *src, size_t bytes)
@@ -466,8 +469,13 @@ public:
 public:
    Ctrl(): host{nullptr}, device{nullptr} { }
 
-   void Setup()
+   void Configure()
    {
+      if (host[static_cast<int>(MemoryType::HOST)])
+      {
+         mfem_error("Memory backends have already been configured!");
+      }
+
       const bool debug = Device::Allows(Backend::DEBUG);
 
       // Filling the host memory backends
@@ -488,7 +496,7 @@ public:
       // Only create MmuHostMemorySpace if needed, as it reroutes signals.
       if (debug)
       {
-         host[static_cast<int>(MemoryType::HOST_MMU)] =
+         host[static_cast<int>(MemoryType::HOST_DEBUG)] =
             static_cast<HostMemorySpace*>(new MmuHostMemorySpace());
       }
 
@@ -510,16 +518,24 @@ public:
 
       if (debug)
       {
-         device[static_cast<int>(MemoryType::DEVICE_MMU)-HostMemoryTypeSize] =
+         device[static_cast<int>(MemoryType::DEVICE_DEBUG)-HostMemoryTypeSize] =
             static_cast<DeviceMemorySpace*>(new MmuDeviceMemorySpace());
       }
    }
 
    HostMemorySpace* Host(const MemoryType mt)
-   { return host[static_cast<int>(mt)]; }
+   {
+      const int mt_i = static_cast<int>(mt);
+      MFEM_ASSERT(host[mt_i], "Memory manager has not been configured!");
+      return host[mt_i];
+   }
 
    DeviceMemorySpace* Device(const MemoryType mt)
-   { return device[static_cast<int>(mt)-HostMemoryTypeSize]; }
+   {
+      const int mt_i = static_cast<int>(mt) - HostMemoryTypeSize;
+      MFEM_ASSERT(device[mt_i], "Memory manager has not been configured!");
+      return device[mt_i];
+   }
 
    ~Ctrl()
    {
@@ -559,7 +575,7 @@ void *MemoryManager::New_(void *h_tmp, size_t bytes, MemoryType mt,
    }
 
    flags |= Mem::REGISTERED;
-   if (host_reg)  // HOST_UMPIRE, HOST_MMU
+   if (host_reg)  // HOST_UMPIRE, HOST_DEBUG
    {
       mm.Insert(h_ptr, bytes, h_mt, d_mt);
       flags |= Mem::OWNS_DEVICE | Mem::VALID_HOST;
@@ -603,7 +619,7 @@ void *MemoryManager::Register_(void *ptr, void *h_tmp, size_t bytes,
    void *h_ptr = h_tmp;
    if (h_tmp == nullptr) { ctrl->Host(h_mt)->Alloc(&h_ptr, bytes); }
 
-   if (host_reg) // HOST_UMPIRE, HOST_MMU
+   if (host_reg) // HOST_UMPIRE, HOST_DEBUG
    {
       mm.Insert(h_ptr, bytes, h_mt, d_mt);
       flags = (own ? flags | Mem::OWNS_HOST : flags & ~Mem::OWNS_HOST) |
@@ -665,7 +681,7 @@ void *MemoryManager::ReadWrite_(void *h_ptr, MemoryClass mc,
       case MemoryClass::HOST:
       case MemoryClass::HOST_32:
       case MemoryClass::HOST_64:
-      case MemoryClass::HOST_MMU:
+      case MemoryClass::HOST_DEBUG:
       case MemoryClass::HOST_UMPIRE:
       {
          const bool copy = !(flags & Mem::VALID_HOST);
@@ -676,7 +692,7 @@ void *MemoryManager::ReadWrite_(void *h_ptr, MemoryClass mc,
       }
 
       case MemoryClass::DEVICE:
-      case MemoryClass::DEVICE_MMU:
+      case MemoryClass::DEVICE_DEBUG:
       case MemoryClass::DEVICE_UVM:
       case MemoryClass::DEVICE_UMPIRE:
       {
@@ -698,7 +714,7 @@ const void *MemoryManager::Read_(void *h_ptr, MemoryClass mc,
       case MemoryClass::HOST:
       case MemoryClass::HOST_32:
       case MemoryClass::HOST_64:
-      case MemoryClass::HOST_MMU:
+      case MemoryClass::HOST_DEBUG:
       case MemoryClass::HOST_UMPIRE:
       {
          const bool copy = !(flags & Mem::VALID_HOST);
@@ -709,7 +725,7 @@ const void *MemoryManager::Read_(void *h_ptr, MemoryClass mc,
       }
 
       case MemoryClass::DEVICE:
-      case MemoryClass::DEVICE_MMU:
+      case MemoryClass::DEVICE_DEBUG:
       case MemoryClass::DEVICE_UVM:
       case MemoryClass::DEVICE_UMPIRE:
       {
@@ -731,7 +747,7 @@ void *MemoryManager::Write_(void *h_ptr, MemoryClass mc,
       case MemoryClass::HOST:
       case MemoryClass::HOST_32:
       case MemoryClass::HOST_64:
-      case MemoryClass::HOST_MMU:
+      case MemoryClass::HOST_DEBUG:
       case MemoryClass::HOST_UMPIRE:
       {
          flags = (flags | Mem::VALID_HOST) & ~Mem::VALID_DEVICE;
@@ -741,7 +757,7 @@ void *MemoryManager::Write_(void *h_ptr, MemoryClass mc,
       }
 
       case MemoryClass::DEVICE:
-      case MemoryClass::DEVICE_MMU:
+      case MemoryClass::DEVICE_DEBUG:
       case MemoryClass::DEVICE_UVM:
       case MemoryClass::DEVICE_UMPIRE:
       {
@@ -1099,15 +1115,22 @@ MemoryManager::MemoryManager()
 
 MemoryManager::~MemoryManager() { if (exists) { Destroy(); } }
 
-void MemoryManager::Setup(MemoryType host_mt, MemoryType device_mt)
+void MemoryManager::Configure(const MemoryType host_mt,
+                              const MemoryType device_mt)
 {
-#ifndef UMPIRE_USE_STATIC
-   // Needs to be done here, to avoid "invalid device function"
-   ctrl->Setup();
-#endif
+   ctrl->Configure();
    host_mem_type = host_mt;
    device_mem_type = device_mt;
 }
+
+#ifdef MFEM_USE_UMPIRE
+void MemoryManager::SetUmpireAllocatorNames(const char *h_name,
+                                            const char *d_name)
+{
+   h_umpire_name = h_name;
+   d_umpire_name = d_name;
+}
+#endif
 
 void MemoryManager::Destroy()
 {
@@ -1181,6 +1204,11 @@ void MemoryPrintFlags(unsigned flags)
 MemoryManager mm;
 
 bool MemoryManager::exists = false;
+
+#ifdef MFEM_USE_UMPIRE
+const char* MemoryManager::h_umpire_name = MFEM_UMPIRE_HOST;
+const char* MemoryManager::d_umpire_name = MFEM_UMPIRE_DEVICE;
+#endif
 
 MemoryType MemoryManager::host_mem_type = MemoryType::HOST;
 MemoryType MemoryManager::device_mem_type = MemoryType::HOST;

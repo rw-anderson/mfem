@@ -94,9 +94,6 @@ void Device::Configure(const std::string &device, const int dev)
    // Enable the device
    Enable();
 
-   // Update the host & device memory backends
-   Get().UpdateMemoryTypeAndClass();
-
    // Copy all data members from the global 'singleton_device' into '*this'.
    std::memcpy(this, &Get(), sizeof(Device));
 
@@ -143,13 +140,13 @@ void Device::UpdateMemoryTypeAndClass()
       host_mem_class = MemoryClass::HOST_UMPIRE;
    }
 
-   // In 'debug' mode, switch for the host and device MMU memory types
+   // In 'debug' mode, switch for the host and device DEBUG memory types
    if (debug)
    {
-      host_mem_type = MemoryType::HOST_MMU;
-      host_mem_class = MemoryClass::HOST_MMU;
-      device_mem_type = MemoryType::DEVICE_MMU;
-      device_mem_class = MemoryClass::DEVICE_MMU;
+      host_mem_type = MemoryType::HOST_DEBUG;
+      host_mem_class = MemoryClass::HOST_DEBUG;
+      device_mem_type = MemoryType::DEVICE_DEBUG;
+      device_mem_class = MemoryClass::DEVICE_DEBUG;
    }
 
    // Allow to tune the device memory types, with some restrictions
@@ -165,13 +162,15 @@ void Device::UpdateMemoryTypeAndClass()
    }
 
    // Update the memory manager with the new settings
-   mm.Setup(host_mem_type, device_mem_type);
+   mm.Configure(host_mem_type, device_mem_type);
 }
 
 void Device::Enable()
 {
    const bool accelerated = Get().backends & ~(Backend::CPU | Backend::DEBUG);
    if (accelerated) { Get().mode = Device::ACCELERATED;}
+   // Update the host & device memory backends
+   Get().UpdateMemoryTypeAndClass();
 }
 
 #ifdef MFEM_USE_CUDA

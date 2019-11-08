@@ -30,11 +30,11 @@ enum class MemoryType
    HOST_UMPIRE,   ///< Host memory; using Umpire
    HOST_32,       ///< Host memory; aligned at 32 bytes
    HOST_64,       ///< Host memory; aligned at 64 bytes
-   HOST_MMU,      ///< Host memory; with MMU protection
+   HOST_DEBUG,    ///< Host memory; protected while in device mode
    DEVICE,        ///< Device memory; using *Malloc, *Free
    DEVICE_UMPIRE, ///< Device memory; using Umpire
    DEVICE_UVM,    ///< Device memory; using *MallocManaged, *Free
-   DEVICE_MMU,    ///< Device memory; with MMU protection
+   DEVICE_DEBUG,  ///< Device memory; protected while in host mode
    SIZE           ///< Number of host and device memory types
 };
 
@@ -66,15 +66,15 @@ inline MemoryType& operator--(MemoryType &mt,int)
  *  use MemoryClass::DEVICE for their inputs. */
 enum class MemoryClass
 {
-   HOST,          ///< Memory types: { HOST, HOST_UMPIRE, HOST_32, HOST_64, HOST_MMU }
-   HOST_UMPIRE,   ///< Memory types: { HOST_UMPIRE, HOST_32, HOST_64, HOST_MMU }
-   HOST_32,       ///< Memory types: { HOST_32, HOST_64, HOST_MMU }
-   HOST_64,       ///< Memory types: { HOST_64, HOST_MMU }
-   HOST_MMU,      ///< Memory types: { HOST_MMU }
-   DEVICE,        ///< Memory types: { DEVICE, DEVICE_UMPIRE, DEVICE_UVM, DEVICE_MMU}
-   DEVICE_UMPIRE, ///< Memory types: { DEVICE_UMPIRE, DEVICE_UVM, DEVICE_MMU}
-   DEVICE_UVM,    ///< Memory types: { DEVICE_UVM, DEVICE_MMU}
-   DEVICE_MMU     ///< Memory types: { DEVICE_MMU }
+   HOST,          ///< Memory types: { HOST, HOST_UMPIRE, HOST_32, HOST_64, HOST_DEBUG }
+   HOST_UMPIRE,   ///< Memory types: { HOST_UMPIRE, HOST_32, HOST_64, HOST_DEBUG }
+   HOST_32,       ///< Memory types: { HOST_32, HOST_64, HOST_DEBUG }
+   HOST_64,       ///< Memory types: { HOST_64, HOST_DEBUG }
+   HOST_DEBUG,    ///< Memory types: { HOST_DEBUG }
+   DEVICE,        ///< Memory types: { DEVICE, DEVICE_UMPIRE, DEVICE_UVM, DEVICE_DEBUG}
+   DEVICE_UMPIRE, ///< Memory types: { DEVICE_UMPIRE, DEVICE_UVM, DEVICE_DEBUG}
+   DEVICE_UVM,    ///< Memory types: { DEVICE_UVM, DEVICE_DEBUG}
+   DEVICE_DEBUG   ///< Memory types: { DEVICE_DEBUG }
 };
 
 /// Return true if the given memory type is in MemoryClass::HOST.
@@ -82,7 +82,7 @@ inline bool IsHostMemory(MemoryType mt) { return mt < MemoryType::DEVICE; }
 
 /// Return true if the given host memory type needs to be registered.
 inline bool IsHostRegisteredMemory(MemoryType mt)
-{ return mt == MemoryType::HOST_UMPIRE || mt == MemoryType::HOST_MMU; }
+{ return mt == MemoryType::HOST_UMPIRE || mt == MemoryType::HOST_DEBUG; }
 
 /// Return a suitable MemoryType for a given MemoryClass.
 MemoryType GetMemoryType(MemoryClass mc);
@@ -94,8 +94,8 @@ MemoryType GetMemoryType(MemoryClass mc);
     Currently, the operation is defined as a*b := max(a,b) where the max
     operation is based on the enumeration ordering:
 
-    HOST < HOST_UMPIRE < HOST_32 < HOST_64 < HOST_MMU
-                       < DEVICE < DEVICE_UMPIRE < DEVICE_UVM < DEVICE_MMU. */
+    HOST < HOST_UMPIRE < HOST_32 < HOST_64 < HOST_DEBUG
+                       < DEVICE < DEVICE_UMPIRE < DEVICE_UVM < DEVICE_DEBUG. */
 MemoryClass operator*(MemoryClass mc1, MemoryClass mc2);
 
 /// Class used by MFEM to store pointers to host and/or device memory.
@@ -112,7 +112,7 @@ MemoryClass operator*(MemoryClass mc1, MemoryClass mc2);
 
     A Memory object stores up to two different pointers: one host pointer (with
     MemoryType from MemoryClass::HOST) and one device pointer (currently one of
-    MemoryType: DEVICE, DEVICE_UMPIRE,  DEVICE_UVM or DEVICE_MMU).
+    MemoryType: DEVICE, DEVICE_UMPIRE,  DEVICE_UVM or DEVICE_DEBUG).
 
     A Memory object can hold (wrap) an externally allocated pointer with any
     given MemoryType.
@@ -443,6 +443,12 @@ private:
    /// Return true if the global memory manager instance exists.
    static bool Exists() { return exists; }
 
+   /// Host and device allocator names for Umpire.
+#ifdef MFEM_USE_UMPIRE
+   static const char *h_umpire_name;
+   static const char *d_umpire_name;
+#endif
+
 private: // Static methods used by the Memory<T> class
 
    /// Allocate and register a new pointer. Return the host pointer.
@@ -542,8 +548,16 @@ public:
    MemoryManager();
    ~MemoryManager();
 
-   /// Memory manager setup with given host and device default memory types
-   void Setup(MemoryType host_mt, MemoryType device_mt);
+   /// Configure the Memory manager with given default host and device types
+   /// This method will be called when configuring a device.
+   void Configure(const MemoryType h_mt, const MemoryType d_mt);
+
+#ifdef MFEM_USE_UMPIRE
+   /// Set the host and device UMpire allocator names
+   void SetUmpireAllocatorNames(const char *h_name, const char *d_name);
+   const char *GetUmpireAllocatorHostName() { return h_umpire_name; }
+   const char *GetUmpireAllocatorDeviceName() { return d_umpire_name; }
+#endif
 
    /// Free all the device memories
    void Destroy();
