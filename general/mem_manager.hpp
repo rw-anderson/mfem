@@ -451,6 +451,7 @@ private:
 
 private: // Static methods used by the Memory<T> class
 
+   /// Wrap an externally allocated host pointer.
    static void Wrap_(void *h_ptr, size_t bytes, unsigned &flags);
 
    /// Allocate and register a new pointer. Return the host pointer.
