@@ -24,7 +24,7 @@ void vismesh(Mesh* mesh)
           << "window_geometry "
           << (vish + border) << " " << 0
           << " " << visw << " " << vish  << endl
-          << "keys mgeA" << endl;
+          << "keys mgA" << endl;
    }
 }
 
@@ -32,14 +32,25 @@ int main(int argc, char *argv[])
 {
    vis.open(vishost, visport);
 
-   const char *mesh_file = "../../data/star.mesh";
+   const char *mesh_file = "../../data/inline-quad.mesh";
+   // const char *mesh_file = "../../data/star.mesh";
    
    Mesh *mesh = new Mesh(mesh_file, 1, 1);
    mesh->EnsureNCMesh();
 
-   Array<Refinement> refs(1);
+   Array<Refinement> refs(2);
    refs[0] = Refinement(0);
+   refs[1] = Refinement(5);
    mesh->GeneralRefinement(refs, 1, 1);
+
+//   vismesh(mesh);
+
+   const Table &dt = mesh->ncmesh->GetDerefinementTable();
+   dt.Print();
+   Array<int> derefs(1);
+   derefs[0] = 3;
+
+   mesh->GeneralDerefinement(derefs);
 
    vismesh(mesh);
    
